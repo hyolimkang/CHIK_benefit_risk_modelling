@@ -1,5 +1,4 @@
 ## load simulation data for all 11 states in brazil ----------------------------
-
 load("01_Data/sim_results_vc_ixchiq_model.RData")
 
 # extract weekly FOI for each state

@@ -648,12 +648,12 @@ br_representative_benefit <- br_representative_benefit %>%
   mutate(
     age_group = ifelse(age_group == "65", "65+", age_group),
     ar_category = case_when(
-      AR_total_pct < 1                    ~ "<1%",
-      AR_total_pct >= 1 & AR_total_pct < 5 ~ "1–5%",
-      AR_total_pct >= 5                   ~ "5%+",
+      AR_total_pct < 10                    ~ "<10%",
+      AR_total_pct >= 10 & AR_total_pct < 50 ~ "10–50%",
+      AR_total_pct >= 50                   ~ "50%+",
       TRUE                                ~ NA_character_
     ),
-    ar_category = factor(ar_category, levels = c("<1%", "1–5%", "5%+"))
+    ar_category = factor(ar_category, levels = c("<10%", "10–50%", "50%+"))
   ) %>%
   filter(!is.na(ar_category)) %>%
   dplyr::rename(AgeCat = age_group) 
@@ -669,6 +669,14 @@ brr_labels <- c("0.01", "0.1", "1", "10", "100")
 
 
 # 2. raster
+panel_ranges <- br_representative_benefit %>%
+  group_by(outcome, ar_category, days) %>%  
+  summarise(
+    x_min = 0, x_max = max(x_hi, na.rm = TRUE) * 1.1,
+    y_min = 0, y_max = max(y_hi, na.rm = TRUE) * 1.1,
+    .groups = "drop"
+  )
+
 bg_grid_optimized <- panel_ranges %>%
   rowwise() %>%
   do({

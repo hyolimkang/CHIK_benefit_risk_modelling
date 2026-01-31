@@ -349,7 +349,7 @@ for (d in seq_len(nrow(lhs_sample))) {
   # ---------- loop over states (FOI + underreporting adjustment) ----------
   for (st in states_to_run) {
     
-    # reported-calibrated daily FOI (state_key로 접근)
+    # reported-calibrated daily FOI 
     foi_daily_cal <- foi_daily_by_state[[st]]
     
     # state-specific reporting probability (median)

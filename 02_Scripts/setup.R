@@ -1,0 +1,370 @@
+# ----------------------------------------------------------
+# Load packages and source functions/other scripts
+# ----------------------------------------------------------
+
+# setwd
+setwd("C:/Users/user/OneDrive - London School of Hygiene and Tropical Medicine/CHIK_benefit_risk")
+setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandTropicalMedicine/CHIK_benefit_risk")
+
+# load packages
+
+pacman::p_load(
+  dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr,
+  cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern
+)
+
+# Clean up from previous code / runs
+rm(list = ls(all = TRUE))
+options(scipen = 999)
+
+
+# Data
+load("01_Data/combined_nnv_national_age_ixchiq.RData")
+load("01_Data/mortality_chikv.RData")
+load("01_Data/rho_df.RData")
+all_risk <- read.csv("01_Data/all_risk_four_age.csv")
+
+# ----------------------------------------------------------
+# Functions 
+# ----------------------------------------------------------
+
+# compute attack rate
+compute_ar <- function(lambda, s0 = 1, days){
+  s0 * (1 - exp(- lambda * days/365))
+}
+
+# compute outcome metrics
+compute_outcome <- function(AR, p_hosp, p_death, p_sae_vacc, p_death_vacc, VE_hosp, VE_death) {
+  
+  # --- Infection outcomes per 10,000 ---
+  risk_nv_hosp  <- 1e4 * AR * p_hosp
+  risk_nv_death <- 1e4 * AR * p_death
+  risk_nv_sae   <- risk_nv_hosp + risk_nv_death
+  
+  risk_v_hosp   <- 1e4 * AR * p_hosp  * (1 - VE_hosp)
+  risk_v_death  <- 1e4 * AR * p_death * (1 - VE_death)
+  risk_v_sae    <- risk_v_hosp + risk_v_death
+  
+  # --- Vaccine-related outcomes per 10,000 ---
+  vacc_sae_10k   <- 1e4 * p_sae_vacc
+  vacc_death_10k <- 1e4 * p_death_vacc
+  
+  # --- Averted (infection SAE/death only) ---
+  averted_10k_sae   <- risk_nv_sae   - risk_v_sae
+  averted_10k_death <- risk_nv_death - risk_v_death
+  
+  # --- Excess (vaccine-related) ---
+  excess_10k_sae   <- vacc_sae_10k
+  excess_10k_death <- vacc_death_10k
+  
+  # --- BRR ---
+  brr_sae   <- ifelse(excess_10k_sae   == 0, NA, averted_10k_sae   / excess_10k_sae)
+  brr_death <- ifelse(excess_10k_death == 0, NA, averted_10k_death / excess_10k_death)
+  
+  list(
+    # needed by DALY block
+    risk_nv_hosp  = risk_nv_hosp,
+    risk_nv_death = risk_nv_death,
+    risk_v_hosp   = risk_v_hosp,
+    risk_v_death  = risk_v_death,
+    
+    # used for summaries
+    averted_10k_sae   = averted_10k_sae,
+    excess_10k_sae    = excess_10k_sae,
+    brr_sae           = brr_sae,
+    
+    averted_10k_death = averted_10k_death,
+    excess_10k_death  = excess_10k_death,
+    brr_death         = brr_death
+  )
+}
+
+make_weights_foi <- function(L) {
+  t <- seq(0 , 1, length.out = L) # L is the total lengths of an outbreak and the sum should be 1 for FOI 
+  w <- sin(pi * t) # weight (shape similar to bell-shape curve outbreak)
+  w_norm <- w / sum(w) # normalise
+  return(w_norm)
+}
+
+weekly_to_daily_foi <- function(phi_weekly) {
+  phi_weekly <- as.numeric(phi_weekly)
+  rep(phi_weekly / 7, each = 7) # 길이 364
+}
+
+compute_daily_foi <- function(AR_total, L) {
+  foi_total <- -log(1 - AR_total) # cumulative FOI over the outbreak 
+  w <- make_weights_foi(L)
+  foi_daily <- foi_total * w
+  return(foi_daily)
+}
+
+compute_ar_travel <- function(foi_daily, entry_day, D) {
+  L <- length(foi_daily)
+  D <- max(1L, round(D))
+  
+  if (D >= L) {
+    foi_travel <- sum(foi_daily)
+  } else {
+    entry_day <- max(1L, min(entry_day, L - D + 1L))
+    idx <- entry_day:(entry_day + D - 1L)
+    foi_travel <- sum(foi_daily[idx])
+  }
+  
+  1 - exp(-foi_travel)
+}
+
+# LHS Samples
+set.seed(123)
+runs = 1000
+A <- randomLHS (n = runs, 
+                k = 51) 
+lhs_sample <- matrix (nrow = nrow(A), ncol = ncol(A))
+
+# vacc sae and death
+lhs_sample [,1]   <- qbeta(A[,1], shape1 = 6+0.5, shape2 = 32949-6+0.5) # conservative values
+lhs_sample [,2]   <- qbeta(A[,2], shape1 = 20+0.5, shape2 = 18445-20+0.5) # conservative values
+lhs_sample [,3]   <- qbeta(A[,3], shape1 = 0+0.5, shape2 = 32949-0+0.5) # conservative values
+lhs_sample [,4]   <- qbeta(A[,4], shape1 = 1+0.5, shape2 = 18445-1+0.5) # conservative values
+
+# natural hospitalisation (case + 1 / n - case + 1)
+lhs_sample [,5]   <- qbeta(A[,5], shape1 = 3703+1, shape2 = 92763-3703+1)
+lhs_sample [,6]   <- qbeta(A[,6], shape1 = 1568+1, shape2 = 50598-1568+1)
+lhs_sample [,7]   <- qbeta(A[,7], shape1 = 11344+1, shape2 = 396351-11344+1)
+lhs_sample [,8]   <- qbeta(A[,8], shape1 = 3690+1, shape2 = 303588-3690+1)
+
+# natural death
+lhs_sample [,9]   <- qbeta(A[,9], shape1 = 32+1, shape2 = 92763-32+1)
+lhs_sample [,10]   <- qbeta(A[,10], shape1 = 22+1, shape2 = 50598-22+1)
+lhs_sample [,11]   <- qbeta(A[,11], shape1 = 312+1, shape2 = 396351-312+1)
+lhs_sample [,12]   <- qbeta(A[,12], shape1 = 534+1, shape2 = 303588-534+1)
+
+# ve, ar, travel duration 
+lhs_sample [,13]   <- qtruncnorm(A[,13], a = 0.967, b = 0.998, mean = 0.989, sd   = (0.998 - 0.967) / (2 * qnorm(0.975)))
+lhs_sample [,14]  <- qunif(A[,14], min = 0.1 * 0.9, max = 0.1 * 1.1)
+lhs_sample [,15]  <- qunif(A[,15], min = 0.2 * 0.9, max = 0.2 * 1.1)
+lhs_sample [,16]  <- qunif(A[,16], min = 0.3 * 0.9, max = 0.3 * 1.1)
+lhs_sample [,17]  <- qunif(A[,17], min = 9 * 0.9, max = 9 * 1.1)
+lhs_sample [,18]  <- qunif(A[,18], min = 7 * 0.9, max = 7 * 1.1)
+lhs_sample [,19]  <- qunif(A[,19], min = 14 * 0.9, max = 14 * 1.1)
+lhs_sample [,20]  <- qunif(A[,20], min = 30 * 0.9, max = 30 * 1.1)
+lhs_sample [,21]  <- qunif(A[,21], min = 90 * 0.9, max = 90 * 1.1)
+
+# symp and hosps 
+lhs_sample [,22]   <- qbeta (p = A[,22], shape1 = 49.14034, shape2 = 34.14837, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,23]   <- qbeta (p = A[,23], shape1 = 34.21298, shape2 = 31.963, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,24]   <- qbeta (p = A[,24], shape1 = 36.77819, shape2 = 32.7458, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,25]   <- qbeta (p = A[,25], shape1 = 35.84287, shape2 = 32.55955, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,26]   <- qbeta (p = A[,26], shape1 = 539.2823, shape2 = 14152.25, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,27]   <- qbeta (p = A[,27], shape1 = 58.96698, shape2 = 1415.207, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,28]   <- qbeta (p = A[,28], shape1 = 115.4225, shape2 = 111.383, ncp=0, lower.tail = TRUE, log.p = FALSE)
+
+# life expectancy by age group
+lhs_sample [,29]   <- qlnorm (p = A[,29], meanlog = 4.26127, sdlog = 0.0511915, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,30]   <- qlnorm (p = A[,30], meanlog = 4.119037, sdlog = 0.0511915, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,31]   <- qlnorm (p = A[,31], meanlog = 3.583519, sdlog = 0.0511915, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,32]   <- qlnorm (p = A[,32], meanlog = 1.808289, sdlog = 0.0511915, lower.tail = TRUE, log.p = FALSE)
+
+# dws and durations 
+lhs_sample [,33]   <- qbeta (p = A[,33], shape1 = 4.581639, shape2 = 9.87148, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,34]  <- qlnorm (p = A[,34], meanlog = -0.6301724, sdlog = 0.0852, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,35]  <- qbeta (p = A[,35], shape1 = 22.51835, shape2 = 146.7926, ncp = 0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,36]  <- qlnorm (p = A[,36], meanlog =  -3.734278, sdlog =  0.3877361, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,37]  <- qbeta (p = A[,37], shape1 = 21.45106, shape2 = 399.158, ncp = 0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,38]  <- qlnorm (p = A[,38], meanlog = -4.108138, sdlog =  0.5998406, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,39]   <- qbeta (p = A[,39], shape1 = 393.9252, shape2 = 547.0268, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,40]   <- qbeta (p = A[,40], shape1 = 17875.92, shape2 = 42754.63, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,41]   <- qbeta (p = A[,41], shape1 = 799.2911, shape2 = 3306.976, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,42]   <- qbeta (p = A[,42], shape1 = 77.56885, shape2 = 836.687, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,43]   <- qbeta (p = A[,43], shape1 = 7.605944, shape2 = 1074.944, ncp=0, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,44]  <- qlnorm (p = A[,44], meanlog = -2.145581, sdlog =  0.1815621, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,45]  <- qlnorm (p = A[,45], meanlog = -0.5430045, sdlog =  0.154684, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,46]  <- qlnorm (p = A[,46], meanlog = -2.262311, sdlog =  0.4746817, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,47]  <- qlnorm (p = A[,47], meanlog = -1.148854, sdlog = 0.1815042, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,48]  <- qlnorm (p = A[,48], meanlog =  -0.6931472, sdlog =  0.0511915, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,49]  <- qlnorm (p = A[,49], meanlog = 0, sdlog =  0.0511915, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,50]  <- qlnorm (p = A[,50], meanlog = 0.6931472, sdlog = 0.08380206, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,51]   <- qbeta (p = A[,51], shape1 = 164.6044, shape2 = 618335.4, ncp=0, lower.tail = TRUE, log.p = FALSE)
+
+cols <- c(
+  "p_sae_vacc_u65",
+  "p_sae_vacc_65",
+  "p_death_vacc_u65",
+  "p_death_vacc_65",
+  
+  "p_sae_nat_11",
+  "p_sae_nat_17",
+  "p_sae_nat_64",
+  "p_sae_nat_65",
+  
+  "p_death_nat_11",
+  "p_death_nat_17",
+  "p_death_nat_64",
+  "p_death_nat_65",
+  
+  "ve",
+  "ar_small",
+  "ar_med",
+  "ar_large",
+  "epi_months",
+  "trav_7d",
+  "trav_14d",
+  "trav_30d",
+  "trav_90d",
+  
+  "symp_asia", 
+  "symp_africa", 
+  "symp_america", 
+  "symp_overall", 
+  "fatal_hosp", 
+  "hosp", 
+  "lt", 
+  
+  "le_lost_1_11",
+  "le_lost_12_17",
+  "le_lost_18_64",
+  "le_lost_65",
+  
+  "dw_chronic", 
+  "dur_chronic", 
+  "dw_hosp", 
+  "dur_acute", 
+  "dw_nonhosp", 
+  "dur_nonhosp",
+  "acute", 
+  "subac", 
+  "chr6m", 
+  "chr12m", 
+  "chr30m", 
+  "dw_chronic_mild", 
+  "dw_chronic_severe", 
+  "dur_subac", 
+  "dw_subac", 
+  "dur_6m", 
+  "dur_12m", 
+  "dur_30m", 
+  "fatal_nonhosp"
+)
+colnames (lhs_sample) <- cols
+lhs_sample   <- as.data.frame(lhs_sample)
+
+##  function for DALY estimation
+# compute brr
+compute_daly_one <- function(age_group,
+                             deaths_10k = 0,
+                             hosp_10k = 0,
+                             nonhosp_symp_10k = 0,
+                             symp_10k = NULL,      
+                             sae_10k = 0,
+                             deaths_sae_10k = 0,
+                             draw_pars) {
+  
+  life_expectancy <- dplyr::case_when(
+    age_group == "1-11"  ~ draw_pars$le_lost_1_11,
+    age_group == "12-17" ~ draw_pars$le_lost_12_17,
+    age_group == "18-64" ~ draw_pars$le_lost_18_64, 
+    age_group == "65+"   ~ draw_pars$le_lost_65,
+    TRUE ~ NA_real_  
+  )
+  
+  # ---- split weights (acute/subacute/chronic durations) ----
+  p_acute  <- draw_pars$acute
+  p_subac  <- draw_pars$subac
+  p_chr6m  <- draw_pars$chr6m
+  p_chr12m <- draw_pars$chr12m
+  p_chr30m <- draw_pars$chr30m
+  
+  total_p <- p_acute + p_subac + p_chr6m + p_chr12m + p_chr30m
+  p_acute  <- p_acute  / total_p
+  p_subac  <- p_subac  / total_p
+  p_chr6m  <- p_chr6m  / total_p
+  p_chr12m <- p_chr12m / total_p
+  p_chr30m <- p_chr30m / total_p
+  
+  # ---- DW & durations ----
+  dw_hosp      <- draw_pars$dw_hosp
+  dw_nonhosp   <- draw_pars$dw_nonhosp
+  dw_subac     <- draw_pars$dw_subac
+  dw_chronic   <- draw_pars$dw_chronic
+  
+  dur_acute    <- draw_pars$dur_acute
+  dur_nonhosp  <- draw_pars$dur_nonhosp
+  dur_subac    <- draw_pars$dur_subac
+  dur_6m       <- draw_pars$dur_6m
+  dur_12m      <- draw_pars$dur_12m
+  dur_30m      <- draw_pars$dur_30m
+  
+  # =========================
+  # Disease (natural infection)
+  # =========================
+  yll_dz <- deaths_10k * life_expectancy
+  
+  # acute YLD (separate by hosp vs nonhosp)
+  yld_dz_hosp_acute    <- hosp_10k * dw_hosp    * dur_acute
+  yld_dz_nonhosp_acute <- nonhosp_symp_10k * dw_nonhosp * dur_nonhosp
+  
+  # chronic/subacute YLD (apply to symptomatic pool; if symp_10k not given, infer it)
+  if (is.null(symp_10k)) symp_10k <- hosp_10k + nonhosp_symp_10k
+  
+  dz_subac_10k <- symp_10k * p_subac
+  dz_6m_10k    <- symp_10k * p_chr6m
+  dz_12m_10k   <- symp_10k * p_chr12m
+  dz_30m_10k   <- symp_10k * p_chr30m
+  
+  yld_dz_subac <- dz_subac_10k * dw_subac   * dur_subac
+  yld_dz_6m    <- dz_6m_10k    * dw_chronic * dur_6m
+  yld_dz_12m   <- dz_12m_10k   * dw_chronic * dur_12m
+  yld_dz_30m   <- dz_30m_10k   * dw_chronic * dur_30m
+  
+  yld_dz <- yld_dz_hosp_acute + yld_dz_nonhosp_acute +
+    yld_dz_subac + yld_dz_6m + yld_dz_12m + yld_dz_30m
+  
+  daly_dz <- yll_dz + yld_dz
+  
+  # =========================
+  # Vaccine SAE
+  # =========================
+  yll_sae <- deaths_sae_10k * life_expectancy
+  
+  sae_acute_10k  <- sae_10k * p_acute
+  sae_subac_10k  <- sae_10k * p_subac
+  sae_6m_10k     <- sae_10k * p_chr6m
+  sae_12m_10k    <- sae_10k * p_chr12m
+  sae_30m_10k    <- sae_10k * p_chr30m
+  
+  yld_sae_acute <- sae_acute_10k * dw_hosp    * dur_acute
+  yld_sae_subac <- sae_subac_10k * dw_subac   * dur_subac
+  yld_sae_6m    <- sae_6m_10k    * dw_chronic * dur_6m
+  yld_sae_12m   <- sae_12m_10k   * dw_chronic * dur_12m
+  yld_sae_30m   <- sae_30m_10k   * dw_chronic * dur_30m
+  
+  yld_sae <- yld_sae_acute + yld_sae_subac + yld_sae_6m + yld_sae_12m + yld_sae_30m
+  daly_sae <- yll_sae + yld_sae
+  
+  list(
+    daly_dz = daly_dz,
+    yll_dz  = yll_dz,
+    yld_dz  = yld_dz,
+    daly_sae = daly_sae,
+    yll_sae  = yll_sae,
+    yld_sae  = yld_sae,
+    components = list(
+      # disease
+      yld_dz_hosp_acute = yld_dz_hosp_acute,
+      yld_dz_nonhosp_acute = yld_dz_nonhosp_acute,
+      yld_dz_subac = yld_dz_subac,
+      yld_dz_6m = yld_dz_6m,
+      yld_dz_12m = yld_dz_12m,
+      yld_dz_30m = yld_dz_30m,
+      # sae
+      yld_sae_acute = yld_sae_acute,
+      yld_sae_subac = yld_sae_subac,
+      yld_sae_6m = yld_sae_6m,
+      yld_sae_12m = yld_sae_12m,
+      yld_sae_30m = yld_sae_30m
+    )
+  )
+}
+
+
+
+

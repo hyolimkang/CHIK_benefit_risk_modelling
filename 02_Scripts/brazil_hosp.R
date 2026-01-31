@@ -1,3 +1,4 @@
+# setwd
 setwd("C:/Users/user/OneDrive - London School of Hygiene and Tropical Medicine/CHIK_benefit_risk")
 
 ## hosp and death

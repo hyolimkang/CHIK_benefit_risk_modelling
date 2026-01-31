@@ -232,10 +232,10 @@ y_min_buffered <- -y_max_buffered * 0.01
 
 create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3) {
   
-  # 1. 해당 Outcome 데이터만 필터링
+  # 1. outcome filtering
   plot_data <- data %>% filter(outcome == target_outcome)
   
-  # 2. 패널별(AgeCat) 맞춤형 x, y 범위 계산 (Outcome specific)
+  # 2. outcome specific limits
   panel_limits <- plot_data %>%
     group_by(AgeCat) %>%
     summarise(
@@ -244,7 +244,6 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3) {
       .groups = "drop"
     )
   
-  # 3. 패널별 배경 그리드 생성
   bg_grid_specific <- panel_limits %>%
     group_by(AgeCat) %>%
     reframe({
@@ -256,9 +255,8 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3) {
       grid
     })
   
-  # 4. ggplot 생성
+  # 4. ggplot 
   ggplot() +
-    # 배경 (Outcome 전용 범위 적용)
     geom_raster(
       data = bg_grid_specific,
       aes(x = x, y = y, fill = log10_brr),
@@ -273,16 +271,15 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3) {
     ) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4) +
     
-    # 에러바 및 포인트
+    # error bar and points
     geom_errorbar(data = plot_data, aes(x = x_med, ymin = y_lo, ymax = y_hi, color = outcome), width = 0) +
     geom_errorbarh(data = plot_data, aes(y = y_med, xmin = x_lo, xmax = x_hi, color = outcome), height = 0) +
     geom_point(data = plot_data, aes(x = x_med, y = y_med, shape = VE_label, color = outcome), 
                size = 3, fill = "white", stroke = 1) +
     
-    # 연령별 패널 분리 및 축 범위 개별화
+    # facet by age group
     facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
     
-    # 색상 및 스타일 (Outcome별 고유 색상 유지)
     scale_color_manual(values = c("SAE" = "#1B7F1B", "Death" = "#B8860B", "DALY" = "#A23B72")) +
     scale_shape_manual(values = c("Disease blocking only" = 21, "Disease and infection blocking" = 24)) +
     

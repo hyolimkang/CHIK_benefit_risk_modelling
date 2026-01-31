@@ -1,4 +1,5 @@
 ## load simulation data for all 11 states in brazil ----------------------------
+
 load("01_Data/sim_results_vc_ixchiq_model.RData")
 
 # extract weekly FOI for each state
@@ -305,8 +306,6 @@ for (d in seq_len(nrow(lhs_sample))) {
 }
 
 psa_df <- bind_rows(psa_out_list)
-
-save(psa_df, file = "01_Data/psa_df_bra_travel.RData")
 
 ## loop with under-reporting adjsuted FOI--------------------------------------------------
 psa_out_list <- list()
@@ -659,40 +658,8 @@ br_representative_benefit <- br_representative_benefit %>%
   filter(!is.na(ar_category)) %>%
   dplyr::rename(AgeCat = age_group) 
 
-panel_ranges <- br_representative_benefit %>%
-  group_by(ar_category, days) %>%
-  summarise(
-    x_min = min(c(0, x_lo), na.rm = TRUE),  # 0 또는 실제 최소값 중 작은 값
-    x_max = max(x_hi, na.rm = TRUE) * 1.05,  # 5% 여유
-    y_min = min(c(0, y_lo), na.rm = TRUE),  # 0 또는 실제 최소값 중 작은 값
-    y_max = max(y_hi, na.rm = TRUE) * 1.05,  # 5% 여유
-    .groups = "drop"
-  )
 
 # 3. background
-bg_grid_optimized <- panel_ranges %>%
-  rowwise() %>%
-  do({
-    panel_data <- .
-    
-    x_seq <- seq(panel_data$x_min, panel_data$x_max, length.out = 200)
-    y_seq <- seq(panel_data$y_min, panel_data$y_max, length.out = 200)
-    
-    grid <- expand.grid(x = x_seq, y = y_seq)
-    
-    grid$brr <- with(grid, ifelse(x > 0, y / x, NA_real_))
-    grid$log10_brr <- log10(grid$brr)
-    
-    # --- 이 부분이 반드시 추가되어야 합니다 ---
-    grid$outcome     <- panel_data$outcome      # 지표 이름 (DALY, Death 등)
-    grid$ar_category <- panel_data$ar_category  # AR 카테고리
-    grid$days        <- panel_data$days         # 여행 기간
-    # ---------------------------------------
-    
-    grid
-  }) %>%
-  ungroup()
-
 
 log_min <- -2
 log_max <- 2
@@ -700,118 +667,22 @@ log_range <- seq(log_min, log_max, by = 1)
 brr_labels <- c("0.01", "0.1", "1", "10", "100")
 
 
-## graph
-plot_final <- 
-  ggplot() +
-  geom_raster(
-    data = bg_grid_optimized,
-    aes(x = x, y = y, fill = log10_brr),
-    interpolate = TRUE
-  ) +
-  
-  scale_fill_gradient2(
-    name = "Benefit–risk ratio",
-    low = "#ca0020", 
-    mid = "#f7f7f7", 
-    high = "#0571b0",
-    midpoint = 0,
-    limits = c(log_min, log_max),
-    breaks = log_range,
-    labels = brr_labels,
-    oob = scales::squish,
-    na.value = "white"
-  ) +
-  
-  geom_errorbar(
-    data = br_representative_benefit, 
-    aes(x = x_med, ymin = y_lo, ymax = y_hi, color = outcome), 
-    width = 0, linewidth = 0.6
-  ) +
-  geom_errorbarh(
-    data = br_representative_benefit, 
-    aes(y = y_med, xmin = x_lo, xmax = x_hi, color = outcome), 
-    height = 0, linewidth = 0.6
-  ) +
-  geom_point(
-    data = br_representative_benefit, 
-    aes(x = x_med, y = y_med, shape = AgeCat, color = outcome), 
-    size = 2.5, stroke = 0.7, fill = "white"
-  ) +
-  
-  # y=x 
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", 
-              color = "black", linewidth = 0.9, alpha = 0.8) +
-  
-  # facet_wrap 
-  facet_wrap(
-    ar_category ~ days, 
-    scales = "free", 
-    ncol = 4
-  ) +
-  
-  scale_color_manual(
-    values = c("SAE" = "#1B7F1B", "Death" = "#B8860B", "DALY" = "#A23B72"), 
-    name = "Outcome type"
-  ) +
-  scale_shape_manual(
-    values = c("1-11" = 21, "12-17" = 22, "18-64" = 23, "65+" = 24), 
-    name = "Age group"
-  ) +
-  
-  scale_x_continuous(expand = c(0, 0)) +
-  scale_y_continuous(expand = c(0, 0)) +
-  
-  coord_cartesian(clip = "on") +
-  
-  labs(
-    x = "Excess adverse outcomes (per 10,000 vaccinated)",
-    y = "Infection-related adverse outcomes averted (per 10,000 vaccinated)",
-    title = "Benefit-risk assessment: Traveller vaccination"
-  ) +
-  
-  theme_bw(base_size = 11) +
-  theme(
-    strip.text = element_text(face = "bold", size = 10),
-    strip.background = element_rect(fill = "gray95"),
-    panel.spacing = unit(0.8, "lines"),
-    panel.grid = element_blank(),
-    plot.title = element_text(face = "bold", size = 10, hjust = 0),
-    legend.position = "right"
-  )
 
-
-library(dplyr)
-
-# 11개의 AR 데이터를 카테고리별로 평균 내어 요약
-
-# 1. 지표별/조건별 최적 축 범위 계산
-panel_ranges <- br_representative_benefit %>%
-  group_by(outcome, ar_category, days) %>% # outcome 반드시 포함
-  summarise(
-    x_min = 0,
-    x_max = max(x_hi, na.rm = TRUE) * 1.1, # 데이터보다 10% 넓게
-    y_min = 0,
-    y_max = max(y_hi, na.rm = TRUE) * 1.1,
-    .groups = "drop"
-  )
-
-# 2. 배경 Raster 데이터 생성
+# 2. raster
 bg_grid_optimized <- panel_ranges %>%
   rowwise() %>%
   do({
     panel_data <- .
     
-    # 지표별 범위에 맞춘 200x200 그리드
     x_seq <- seq(panel_data$x_min, panel_data$x_max, length.out = 200)
     y_seq <- seq(panel_data$y_min, panel_data$y_max, length.out = 200)
     
     grid <- expand.grid(x = x_seq, y = y_seq)
     
-    # BRR 및 Log 변환
+    # BRR 
     grid$brr <- with(grid, ifelse(x > 0, y / x, NA_real_))
     grid$log10_brr <- log10(grid$brr)
     
-    # 필터링과 패싯을 위한 메타데이터 주입
     grid$outcome     <- panel_data$outcome
     grid$ar_category <- panel_data$ar_category
     grid$days        <- panel_data$days
@@ -823,11 +694,9 @@ bg_grid_optimized <- panel_ranges %>%
 br_summarized <- br_representative_benefit %>%
   group_by(outcome, ar_category, days, AgeCat) %>%
   summarise(
-    # 중심점 (중앙값 혹은 평균)
     x_med = mean(x_med, na.rm = TRUE),
     y_med = mean(y_med, na.rm = TRUE),
     
-    # 에러바 범위 (카테고리 내 데이터들의 평균적인 범위를 사용)
     x_lo = mean(x_lo, na.rm = TRUE),
     x_hi = mean(x_hi, na.rm = TRUE),
     y_lo = mean(y_lo, na.rm = TRUE),
@@ -836,28 +705,16 @@ br_summarized <- br_representative_benefit %>%
     .groups = "drop"
   )
 
-library(ggplot2)
 
 plot_brr_outcome <- function(target_outcome, title_text, color_val) {
   
-  # 1) 요약된 데이터 필터링: .data 대명사를 사용하여 컬럼명 명시
   plot_data <- br_summarized %>% 
     filter(.data$outcome == target_outcome)
   
-  # 2) 배경 그리드 필터링
   plot_bg <- bg_grid_optimized %>% 
     filter(.data$outcome == target_outcome)
   
-  # [안전 검사] 데이터가 없으면 에러 메시지 출력
-  if(nrow(plot_data) == 0) {
-    message(paste0("⚠️ Skipping: No data for '", target_outcome, "'"))
-    message(paste0("   Available outcomes: ", paste(unique(br_summarized$outcome), collapse=", ")))
-    return(NULL)
-  }
-  
-  # 3) 그래프 그리기
   ggplot() +
-    # 배경 Raster (해당 Outcome의 축 범위에 최적화)
     geom_raster(
       data = plot_bg,
       aes(x = x, y = y, fill = log10_brr),
@@ -873,7 +730,6 @@ plot_brr_outcome <- function(target_outcome, title_text, color_val) {
     
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4) +
     
-    # 에러바 및 포인트
     geom_errorbar(data = plot_data, aes(x = x_med, ymin = y_lo, ymax = y_hi), 
                   color = color_val, width = 0, linewidth = 0.6) +
     geom_errorbarh(data = plot_data, aes(y = y_med, xmin = x_lo, xmax = x_hi), 
@@ -895,10 +751,8 @@ plot_brr_outcome <- function(target_outcome, title_text, color_val) {
       legend.position = "right"
     )
 }
-# 데이터에 있는 이름이 "DALY"이므로 "p_daly" 대신 "DALY"로 호출
-p_daly  <- plot_brr_outcome("DALY",  "Benefit-Risk Assessment: DALY",  "#A23B72")
 
-# Death와 SAE도 데이터셋에 있는 실제 이름(아마 "Death", "SAE")으로 호출하세요
+p_daly  <- plot_brr_outcome("DALY",  "Benefit-Risk Assessment: DALY",  "#A23B72")
 p_death <- plot_brr_outcome("Death", "Benefit-Risk Assessment: Death", "#B8860B")
 p_sae   <- plot_brr_outcome("SAE",   "Benefit-Risk Assessment: SAE",   "#1B7F1B")
 

@@ -7,7 +7,6 @@ setwd("C:/Users/user/OneDrive - London School of Hygiene and Tropical Medicine/C
 setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandTropicalMedicine/CHIK_benefit_risk")
 
 # load packages
-
 pacman::p_load(
   dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr,
   cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern

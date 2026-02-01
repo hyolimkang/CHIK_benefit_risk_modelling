@@ -22,6 +22,7 @@ load("01_Data/combined_nnv_national_age_ixchiq.RData")
 load("01_Data/combined_nnv_df_region_coverage_model.RData")
 load("01_Data/mortality_chikv.RData")
 load("01_Data/rho_df.RData")
+load("01_Data/pop_by_state.RData")
 all_risk <- read.csv("01_Data/all_risk_four_age.csv")
 
 # ----------------------------------------------------------

@@ -1,3 +1,7 @@
+rho_global <- median(rho_df$rho_p50, na.rm = TRUE)
+rho_global_lo <- median(rho_df$rho_p97.5, na.rm = TRUE) # conservative lower infections
+rho_global_hi <- median(rho_df$rho_p2.5,  na.rm = TRUE)
+
 
 true_inf_region <- combined_nnv_df_region_coverage_model %>%
   distinct(region, pre_inf, pre_inf_lo, pre_inf_hi) %>%   # remove VE/VC duplicates
@@ -8,11 +12,10 @@ true_inf_region <- combined_nnv_df_region_coverage_model %>%
     tot_inf_hi  = sum(pre_inf_hi),
     .groups = "drop"
   ) %>%
-  left_join(rho_df, by = "region") %>%
   mutate(
-    true_inf_mid = tot_inf_mid / rho_p50,
-    true_inf_lo  = tot_inf_lo  / rho_p97.5,  # lower true infections: divide by larger rho
-    true_inf_hi  = tot_inf_hi  / rho_p2.5    # upper true infections: divide by smaller rho
+    true_inf_mid = tot_inf_mid / rho_global,
+    true_inf_lo  = tot_inf_lo  / rho_global_lo,  # lower true infections: divide by larger rho
+    true_inf_hi  = tot_inf_hi  / rho_global_hi    # upper true infections: divide by smaller rho
   )
 ar_target_region <- true_inf_region %>%
   left_join(pop_by_state, by = "region") %>%

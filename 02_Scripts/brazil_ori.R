@@ -198,6 +198,10 @@ summary_df <- df_final %>%
 # ------------------------------------------------------------------------------
 # 1. Data Preparation and Labeling
 # ------------------------------------------------------------------------------
+log_min <- -2
+log_max <- 2
+log_range <- seq(log_min, log_max, by = 1)
+brr_labels <- c("0.01", "0.1", "1", "10", "100", "1000")
 
 # Convert VE to factors with the requested descriptive labels
 summary_df <- summary_df %>%
@@ -267,7 +271,8 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3) {
       low = "#ca0020", mid = "#f7f7f7", high = "#0571b0", midpoint = 0,
       limits = c(log_min, log_max),
       oob = scales::squish,
-      labels = function(x) paste0("10^", x)
+      breaks = log_range, 
+      labels = brr_labels,
     ) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4) +
     
@@ -292,7 +297,7 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3) {
       y = "Averted outcomes (per 10,000 vaccinated)"
     ) +
     theme_bw() +
-    theme(legend.position = "bottom", strip.text = element_text(face = "bold"))
+    theme(legend.position = "right", strip.text = element_text(face = "bold"))
 }
 
 plot_sae   <- create_br_plot(summary_df, "SAE")

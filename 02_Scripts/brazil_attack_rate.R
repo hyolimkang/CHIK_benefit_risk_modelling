@@ -52,3 +52,51 @@ foi_daily_by_state_mid <- lapply(foi_daily_adj_by_state, `[[`, "mid")
 
 states_to_run <- names(foi_daily_by_state_mid)
 
+get_AR_from_sim_out <- function(sim_out) {
+  S0 <- sum(sim_out$S[, 1], na.rm = TRUE)
+  ST <- sum(sim_out$S[, ncol(sim_out$S)], na.rm = TRUE)
+  1 - ST / S0
+}
+
+
+extract_AR_all <- function(sim_results) {
+  out <- list(); k <- 1L
+  for (st in names(sim_results)) {
+    for (ve in names(sim_results[[st]])) {
+      for (cv in names(sim_results[[st]][[ve]])) {
+        reps <- sim_results[[st]][[ve]][[cv]]
+        for (r in seq_along(reps)) {
+          sim_out <- reps[[r]]$sim_out
+          out[[k]] <- data.frame(
+            state = st, VE = ve, cov = cv, rep = r,
+            AR = get_AR_from_sim_out(sim_out)
+          )
+          k <- k + 1L
+        }
+      }
+    }
+  }
+  do.call(rbind, out)
+}
+
+AR_df <- extract_AR_all(sim_results_vc_ixchiq_model)
+
+# make AR* using global burden data
+p_symp <- 0.5242478
+
+# If rho_global was calibrated as (reported symptomatic) / (true infections),
+# then infection-hazard scaling should use: FOI_true = FOI_model * p_symp / rho_global
+foi_daily_true_by_state <- lapply(foi_daily_by_state, function(x) list(
+  mid = x * p_symp / rho_global,
+  lo  = x * p_symp / rho_global_lo,  # lower risk: larger rho -> smaller FOI
+  hi  = x * p_symp / rho_global_hi   # higher risk: smaller rho -> larger FOI
+))
+
+AR_state_mid <- sapply(
+  foi_daily_true_by_state,
+  function(z) 1 - exp(-sum(z$mid, na.rm = TRUE))
+)
+
+foi_daily_by_state_mid <- lapply(foi_daily_true_by_state, `[[`, "mid")
+
+

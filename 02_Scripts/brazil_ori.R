@@ -201,7 +201,7 @@ summary_df <- df_final %>%
 log_min <- -2
 log_max <- 2
 log_range <- seq(log_min, log_max, by = 1)
-brr_labels <- c("0.01", "0.1", "1", "10", "100", "1000")
+brr_labels <- c("0.01", "0.1", "1", "10", "100")
 
 # Convert VE to factors with the requested descriptive labels
 summary_df <- summary_df %>%

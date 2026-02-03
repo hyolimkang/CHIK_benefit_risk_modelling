@@ -761,10 +761,10 @@ for (d in seq_len(nrow(lhs_sample))) {
 }
 
 # Final combined dataframe
-psa_df <- dplyr::bind_rows(psa_out_list)
+psa_out_df <- dplyr::bind_rows(psa_out_list)
 
 
-save(psa_df, file = "01_Data/psa_df_bra_travel_allAR.RData")
+save(psa_df, file = "01_Data/psa_df_bra_travel.RData")
 
 ar_summary_all <- psa_df %>%
   pivot_longer(
@@ -795,6 +795,79 @@ ar_summary_all <- psa_df %>%
 ################################################################################
 ## brr space
 ################################################################################
+<<<<<<< HEAD
+# --- STEP 1: Standardize Data Types ---
+br_space_data_benefit <- psa_df %>%
+  mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d"))) %>%
+  pivot_longer(
+    cols = c(
+      excess_10k_sae, excess_10k_death,
+      averted_10k_sae, averted_10k_death
+    ),
+    names_to = c(".value", "outcome"),
+    names_pattern = "(excess_10k|averted_10k)_(sae|death)"
+  ) %>%
+  mutate(outcome = dplyr::recode(outcome, "sae" = "SAE", "death" = "Death")) %>%
+  group_by(AR_total_pct, age_group, days, outcome) %>%
+  summarise(
+    # x-axis: vaccine risk
+    x_med = median(excess_10k),
+    x_lo  = quantile(excess_10k, 0.025),
+    x_hi  = quantile(excess_10k, 0.975),
+    
+    # y-axis: PURE benefit (infection-related outcomes averted)
+    y_med = median(averted_10k),
+    y_lo  = quantile(averted_10k, 0.025),
+    y_hi  = quantile(averted_10k, 0.975),
+    
+    .groups = "drop"
+  )
+
+br_space_sd <- psa_df %>%
+  mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d"))) %>%
+  pivot_longer(
+    cols = c(
+      excess_10k_sae, excess_10k_death,
+      averted_10k_sae, averted_10k_death
+    ),
+    names_to = c(".value", "outcome"),
+    names_pattern = "(excess_10k|averted_10k)_(sae|death)"
+  ) %>%
+  mutate(outcome = dplyr::recode(outcome, "sae" = "SAE", "death" = "Death")) %>%
+  group_by(AR_total_pct, age_group, days, outcome) %>%
+  summarise(
+    x_med = median(excess_10k, na.rm = TRUE),
+    x_lo = quantile(excess_10k, 0.025, na.rm = TRUE),
+    x_hi = quantile(excess_10k, 0.975, na.rm = TRUE),
+    
+    
+    y_med = median(averted_10k, na.rm = TRUE),
+    y_lo = quantile(averted_10k, 0.025, na.rm = TRUE),
+    y_hi = quantile(averted_10k, 0.975, na.rm = TRUE),
+    
+    
+    .groups = "drop"
+  )
+
+# 2) DALY (daly_sae = risk, daly_averted = benefit)
+br_space_daly <- psa_df %>%
+  mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d")),
+         outcome = "DALY") %>%
+  group_by(AR_total_pct, age_group, days, outcome) %>%
+  summarise(
+    x_med = median(daly_sae, na.rm = TRUE),
+    x_lo = quantile(daly_sae, 0.025, na.rm = TRUE),
+    x_hi = quantile(daly_sae, 0.975, na.rm = TRUE),
+    
+    
+    y_med = median(daly_averted, na.rm = TRUE),
+    y_lo = quantile(daly_averted, 0.025, na.rm = TRUE),
+    y_hi = quantile(daly_averted, 0.975, na.rm = TRUE),
+    
+    
+    .groups = "drop"
+  )
+=======
 ## three data
 
 psa_data_lo  <- psa_df %>% filter(ar_level == "lo")
@@ -807,10 +880,14 @@ br_space_data_benefit_mid <- fn_br_space_benefit(psa_data_mid)
 br_space_sd_mid <- fn_br_space_event(psa_data_mid)
 
 br_space_daly_mid <- fn_br_space_daly(psa_data_mid)
+>>>>>>> 0aa9c83524ba3d0ac7a14669d9c470372f0b0233
 
 # br data for lo
 br_space_data_benefit_lo <- fn_br_space_benefit(psa_data_lo)
 
+<<<<<<< HEAD
+br_representative_benefit <- br_representative_benefit %>%
+=======
 br_space_sd_lo <- fn_br_space_event(psa_data_lo)
 
 br_space_daly_lo <- fn_br_space_daly(psa_data_lo)
@@ -829,19 +906,100 @@ br_representative_benefit_hi  <- bind_rows(br_space_sd_hi, br_space_daly_hi)
 
 # add AR category 
 br_representative_benefit_mid <- br_representative_benefit_mid %>%
+>>>>>>> 0aa9c83524ba3d0ac7a14669d9c470372f0b0233
   mutate(
     age_group = ifelse(age_group == "65", "65+", age_group),
     ar_category = case_when(
-      AR_total_pct < 1                    ~ "<1%",
-      AR_total_pct >= 1  & AR_total_pct < 10 ~ "1–10%",
-      AR_total_pct >= 10   ~ "10%+",
+      AR_total_pct < 5                    ~ "<5%",
+      AR_total_pct >= 5  & AR_total_pct < 20 ~ "5–20%",
+      AR_total_pct >= 20 & AR_total_pct < 50    ~ "30-50",
+      AR_total_pct >= 50   ~ "50%+",
       TRUE                                ~ NA_character_
     ),
-    ar_category = factor(ar_category, levels = c("<1%", "1–10%", "10%+"))
+    ar_category = factor(ar_category, levels = c("<5%", "5–20%", "20-50%", "50%+"))
   ) %>%
   filter(!is.na(ar_category)) %>%
   dplyr::rename(AgeCat = age_group) 
 
+<<<<<<< HEAD
+panel_ranges <- br_representative_benefit %>%
+  group_by(ar_category, days) %>%
+  summarise(
+    x_min = min(c(0, x_lo), na.rm = TRUE),  # 0 또는 실제 최소값 중 작은 값
+    x_max = max(x_hi, na.rm = TRUE) * 1.05,  # 5% 여유
+    y_min = min(c(0, y_lo), na.rm = TRUE),  # 0 또는 실제 최소값 중 작은 값
+    y_max = max(y_hi, na.rm = TRUE) * 1.05,  # 5% 여유
+    .groups = "drop"
+  )
+
+# 3. background
+bg_grid_optimized <- panel_ranges %>%
+  rowwise() %>%
+  do({
+    panel_data <- .
+    
+    x_seq <- seq(panel_data$x_min, panel_data$x_max, length.out = 200)
+    y_seq <- seq(panel_data$y_min, panel_data$y_max, length.out = 200)
+    
+    grid <- expand.grid(x = x_seq, y = y_seq)
+    
+    grid$brr <- with(grid, ifelse(x > 0, y / x, NA_real_))
+    grid$log10_brr <- log10(grid$brr)
+    
+    # --- 이 부분이 반드시 추가되어야 합니다 ---
+    grid$outcome     <- panel_data$outcome      # 지표 이름 (DALY, Death 등)
+    grid$ar_category <- panel_data$ar_category  # AR 카테고리
+    grid$days        <- panel_data$days         # 여행 기간
+    # ---------------------------------------
+    
+    grid
+  }) %>%
+  ungroup()
+
+
+log_min <- -2
+log_max <- 2
+log_range <- seq(log_min, log_max, by = 1)
+brr_labels <- c("0.01", "0.1", "1", "10", "100")
+
+
+## graph
+
+panel_ranges <- br_representative_benefit %>%
+  group_by(outcome, ar_category, days) %>% # outcome 반드시 포함
+  summarise(
+    x_min = 0,
+    x_max = max(x_hi, na.rm = TRUE) * 1.1, # 데이터보다 10% 넓게
+    y_min = 0,
+    y_max = max(y_hi, na.rm = TRUE) * 1.1,
+    .groups = "drop"
+  )
+
+# 2. 배경 Raster 데이터 생성
+bg_grid_optimized <- panel_ranges %>%
+  rowwise() %>%
+  do({
+    panel_data <- .
+    
+    # 지표별 범위에 맞춘 200x200 그리드
+    x_seq <- seq(panel_data$x_min, panel_data$x_max, length.out = 200)
+    y_seq <- seq(panel_data$y_min, panel_data$y_max, length.out = 200)
+    
+    grid <- expand.grid(x = x_seq, y = y_seq)
+    
+    # BRR 및 Log 변환
+    grid$brr <- with(grid, ifelse(x > 0, y / x, NA_real_))
+    grid$log10_brr <- log10(grid$brr)
+    
+    # 필터링과 패싯을 위한 메타데이터 주입
+    grid$outcome     <- panel_data$outcome
+    grid$ar_category <- panel_data$ar_category
+    grid$days        <- panel_data$days
+    
+    grid
+  }) %>%
+  ungroup()
+=======
 
 br_representative_benefit_lo <- br_representative_benefit_lo %>%
   mutate(
@@ -883,12 +1041,7 @@ br_summarized_hi <- fn_br_summ(br_representative_benefit_hi)
 
 #### make plots ----------------------------------------------------------------
 ## -----------------------------------------------------------------------------
-
-log_min <- -2
-log_max <- 2
-log_range <- seq(log_min, log_max, by = 1)
-brr_labels <- c("0.01", "0.1", "1", "10", "100")
-
+>>>>>>> 0aa9c83524ba3d0ac7a14669d9c470372f0b0233
 
 br_summarized <- br_representative_benefit %>%
   group_by(outcome, ar_category, days, AgeCat) %>%
@@ -904,11 +1057,76 @@ br_summarized <- br_representative_benefit %>%
     .groups = "drop"
   )
 
+<<<<<<< HEAD
+library(ggplot2)
+
+plot_brr_outcome <- function(target_outcome, title_text, color_val) {
+  
+  # 1) 요약된 데이터 필터링: .data 대명사를 사용하여 컬럼명 명시
+  plot_data <- br_summarized %>% 
+    filter(.data$outcome == target_outcome)
+  
+  # 2) 배경 그리드 필터링
+  plot_bg <- bg_grid_optimized %>% 
+    filter(.data$outcome == target_outcome)
+  
+  # [안전 검사] 데이터가 없으면 에러 메시지 출력
+  if(nrow(plot_data) == 0) {
+    message(paste0("⚠️ Skipping: No data for '", target_outcome, "'"))
+    message(paste0("   Available outcomes: ", paste(unique(br_summarized$outcome), collapse=", ")))
+    return(NULL)
+  }
+  
+  # 3) 그래프 그리기
+  ggplot() +
+    # 배경 Raster (해당 Outcome의 축 범위에 최적화)
+    geom_raster(
+      data = plot_bg,
+      aes(x = x, y = y, fill = log10_brr),
+      interpolate = TRUE
+    ) +
+    scale_fill_gradient2(
+      name = "Benefit–risk ratio",
+      low = "#ca0020", mid = "#f7f7f7", high = "#0571b0",
+      midpoint = 0, limits = c(log_min, log_max),
+      breaks = log_range, labels = brr_labels,
+      oob = scales::squish, na.value = "white"
+    ) +
+    
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4) +
+    
+    # 에러바 및 포인트
+    geom_errorbar(data = plot_data, aes(x = x_med, ymin = y_lo, ymax = y_hi), 
+                  color = color_val, width = 0, linewidth = 0.6) +
+    geom_errorbarh(data = plot_data, aes(y = y_med, xmin = x_lo, xmax = x_hi), 
+                   color = color_val, height = 0, linewidth = 0.6) +
+    geom_point(data = plot_data, aes(x = x_med, y = y_med, shape = AgeCat), 
+               fill = "white", color = color_val, size = 3, stroke = 1) +
+    
+    facet_wrap(~ ar_category + days, scales = "free", ncol = 4) +
+    
+    scale_shape_manual(values = c("1-11"=21, "12-17"=22, "18-64"=23, "65+"=24), name = "Age group") +
+    scale_x_continuous(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0)) +
+    
+    labs(title = title_text, x = "Excess Risk", y = "Averted Outcome") +
+    theme_bw() +
+    theme(
+      panel.grid = element_blank(),
+      strip.background = element_rect(fill = "gray95"),
+      legend.position = "right"
+    )
+}
+p_daly  <- plot_brr_outcome("DALY",  "Benefit-Risk Assessment: DALY",  "#A23B72")
 ### plots mid / 95%UIs
 
-p_daly_mid  <- plot_brr_outcome(br_summarized_mid, bg_grid_optimized_mid,
-                                "DALY",  "Benefit-Risk Assessment: DALY",  "#A23B72")
+p_death <- plot_brr_outcome("Death", "Benefit-Risk Assessment: Death", "#B8860B")
+p_sae   <- plot_brr_outcome("SAE",   "Benefit-Risk Assessment: SAE",   "#1B7F1B")
 
+p_daly
+p_death
+p_sae
+=======
 p_death_mid <- plot_brr_outcome(br_summarized_mid, bg_grid_optimized_mid,
                                 "Death", "Benefit-Risk Assessment: Death", "#B8860B")
 

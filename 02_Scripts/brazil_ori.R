@@ -357,7 +357,6 @@ brr_table_long <- summary_table2 %>%
   ) %>%
   select(outcome, scenario, age_group, VE_col, brr_formatted)
 
-# 2) wide로 변환 (VE가 열)
 brr_table_wide <- brr_table_long %>%
   pivot_wider(
     names_from  = VE_col,
@@ -365,7 +364,6 @@ brr_table_wide <- brr_table_long %>%
   ) %>%
   arrange(outcome, scenario, age_group)
 
-# 3) outcome별로 묶어서 출력
 idx_outcome <- table(brr_table_wide$outcome)
 
 kable(

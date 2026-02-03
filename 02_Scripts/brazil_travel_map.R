@@ -119,7 +119,8 @@ p_pr2 <- ggplot(states_pr %>% filter(!is.na(age_group), !is.na(days))) +
     limits = c(0, 1),
     oob = scales::squish,
     na.value = "grey80",
-    breaks = c(0, 0.25, 0.5, 0.75, 1)
+    breaks = c(0, 0.25, 0.5, 0.75, 1),
+    labels = scales::percent_format(accuracy = 1)
   ) +
   theme(legend.position = "bottom")
 

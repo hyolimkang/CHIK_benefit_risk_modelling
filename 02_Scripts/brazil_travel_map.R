@@ -143,7 +143,8 @@ p_ar2 <- ggplot(states_ar) +
     limits = c(0, max(ar_breaks)),
     oob = scales::squish,
     na.value = "grey80",
-    breaks = scales::pretty_breaks(n = 5) 
+    breaks = scales::pretty_breaks(n = 5),
+    labels = function(x) paste0(round(x), "%")
   ) +
   theme(legend.position = "bottom")
 
@@ -157,3 +158,5 @@ fig2 <- (p_ar2 + p_pr2) +
 
 fig2 <- fig2 & theme(legend.position = "bottom", legend.box = "horizontal")
 fig2
+
+ggsave("06_Results/brr_brazil_map.pdf", plot = fig2, width = 7, height = 6)

@@ -319,3 +319,67 @@ combined_plot <- plot_vaccine_mechanism_final / plot_brr_ori +
   )
 
 ggsave("06_Results/brr_final_plot2.pdf", plot = combined_plot, width = 10, height = 11)
+
+
+# ------------------------------------------------------------------------------
+# 5. Table
+# ------------------------------------------------------------------------------
+
+z <- 1.96 
+
+summary_table2 <- summary_df %>%
+  mutate(
+    x_lo2 = pmax(x_lo, 1e-12),
+    x_hi2 = pmax(x_hi, 1e-12),
+    y_lo2 = pmax(y_lo, 1e-12),
+    y_hi2 = pmax(y_hi, 1e-12),
+    x_med2 = pmax(x_med, 1e-12),
+    y_med2 = pmax(y_med, 1e-12),
+    
+    se_logx = (log(x_hi2) - log(x_lo2)) / (2*z),
+    se_logy = (log(y_hi2) - log(y_lo2)) / (2*z),
+    
+    se_logb = sqrt(se_logx^2 + se_logy^2),
+    
+    brr_med = y_med2 / x_med2,
+    brr_lo  = exp(log(brr_med) - z * se_logb),
+    brr_hi  = exp(log(brr_med) + z * se_logb)
+  ) %>%
+  select(-ends_with("2"))
+
+brr_table_long <- summary_table2 %>%
+  mutate(
+    age_group = AgeCat,
+    brr_formatted = sprintf(
+      "%.2f [%.2f–%.2f]",
+      brr_med, brr_lo, brr_hi
+    ),
+    VE_col = if ("VE_label" %in% names(.)) VE_label else paste0("VE ", percent(VE, accuracy = 1))
+  ) %>%
+  select(outcome, scenario, age_group, VE_col, brr_formatted)
+
+# 2) wide로 변환 (VE가 열)
+brr_table_wide <- brr_table_long %>%
+  pivot_wider(
+    names_from  = VE_col,
+    values_from = brr_formatted
+  ) %>%
+  arrange(outcome, scenario, age_group)
+
+# 3) outcome별로 묶어서 출력
+idx_outcome <- table(brr_table_wide$outcome)
+
+kable(
+  brr_table_wide,
+  format = "html",
+  caption = "Benefit–Risk Ratio (BRR) by Outcome, Scenario, Age Group, and VE",
+  align = "l"
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    font_size = 12
+  ) %>%
+  pack_rows(index = idx_outcome) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)

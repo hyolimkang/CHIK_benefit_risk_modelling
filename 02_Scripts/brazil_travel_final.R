@@ -2,36 +2,6 @@
 load("01_Data/sim_results_vc_ixchiq_model.RData")
 
 # extract weekly FOI for each state
-extract_phi_long <- function(sim_results) {
-  out <- list()
-  k <- 1L
-  
-  states <- names(sim_results)
-  for (st in states) {
-    ve_names <- names(sim_results[[st]])
-    for (ve in ve_names) {
-      cov_names <- names(sim_results[[st]][[ve]])
-      for (cv in cov_names) {
-        reps <- sim_results[[st]][[ve]][[cv]]
-        for (r in seq_along(reps)) {
-          phi <- reps[[r]]$sim_out$phi
-          
-          out[[k]] <- data.frame(
-            state = st,
-            VE    = ve,
-            cov   = cv,
-            rep   = r,
-            week  = seq_along(phi),
-            phi   = as.numeric(phi)
-          )
-          k <- k + 1L
-        }
-      }
-    }
-  }
-  do.call(rbind, out)
-}
-
 phi_df <- extract_phi_long(sim_results_vc_ixchiq_model)
 
 phi_df <- phi_df %>%
@@ -50,11 +20,10 @@ weekly_to_daily_foi <- function(phi_weekly) {
   rep(phi_weekly / 7, each = 7) 
 }
 
+# this is raw foi -- use this FOI to scale up
 foi_daily_by_state <- split(phi_attack$phi, phi_attack$state)
 foi_daily_by_state <- lapply(foi_daily_by_state, weekly_to_daily_foi)
 
-
-states_to_run <- names(foi_daily_by_state)
 
 ### psa loop
 # ---------- PSA loop ----------
@@ -890,20 +859,6 @@ log_range <- seq(log_min, log_max, by = 1)
 brr_labels <- c("0.01", "0.1", "1", "10", "100")
 
 
-br_summarized <- br_representative_benefit %>%
-  group_by(outcome, ar_category, days, AgeCat) %>%
-  summarise(
-    x_med = mean(x_med, na.rm = TRUE),
-    y_med = mean(y_med, na.rm = TRUE),
-    
-    x_lo = mean(x_lo, na.rm = TRUE),
-    x_hi = mean(x_hi, na.rm = TRUE),
-    y_lo = mean(y_lo, na.rm = TRUE),
-    y_hi = mean(y_hi, na.rm = TRUE),
-    
-    .groups = "drop"
-  )
-
 ### plots mid / 95%UIs
 
 p_daly_mid  <- plot_brr_outcome(br_summarized_mid, bg_grid_optimized_mid,
@@ -932,6 +887,10 @@ p_death_hi <- plot_brr_outcome(br_summarized_hi, bg_grid_optimized_hi,
 
 p_sae_hi   <- plot_brr_outcome(br_summarized_hi, bg_grid_optimized_hi,
                                "SAE",   "Benefit-Risk Assessment: SAE",   "#1B7F1B")
+
+ggsave("06_Results/brr_travel_daly_mid.pdf", plot = p_daly_mid, width = 10, height = 8)
+ggsave("06_Results/brr_travel_death_mid.pdf", plot = p_death_mid, width = 10, height = 8)
+ggsave("06_Results/brr_travel_sae_mid.pdf", plot = p_sae_mid, width = 10, height = 8)
 
 ################################################################################
 # table 

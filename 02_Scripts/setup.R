@@ -18,6 +18,7 @@ options(scipen = 999)
 
 
 # Data
+load("01_Data/sim_results_vc_ixchiq_model.RData")
 load("01_Data/combined_nnv_national_age_ixchiq.RData")
 load("01_Data/combined_nnv_df_region_coverage_model.RData")
 load("01_Data/mortality_chikv.RData")
@@ -464,7 +465,7 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
     scale_x_continuous(expand = c(0, 0)) +
     scale_y_continuous(expand = c(0, 0)) +
     
-    labs(title = title_text, x = "Excess Risk", y = "Averted Outcome") +
+    labs(title = title_text, x = "Vaccine related excess outcome (per 10,000 vaccinated individuals)", y = "Outcomes averted by vaccination (per 10,000 vaccinated individuals)") +
     theme_bw() +
     theme(
       panel.grid = element_blank(),

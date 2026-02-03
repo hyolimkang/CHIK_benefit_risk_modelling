@@ -91,5 +91,4 @@ foi_daily_by_state_mid <- lapply(foi_daily_adj_by_state, `[[`, "mid")
 
 states_to_run <- names(foi_daily_by_state_mid)
 
-
-## method2 
+## end ------------------------------------------------------------------------

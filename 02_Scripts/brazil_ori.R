@@ -153,7 +153,7 @@ df_final <- df_final_averted %>%
     vax_daly_hi = res_hi$daly_sae
   ) %>%
   ungroup() %>%
-  select(-starts_with("res_"))
+  dplyr::select(-starts_with("res_"))
 
 summary_df <- df_final %>%
   transmute(
@@ -285,16 +285,18 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3) {
     # facet by age group
     facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
     
-    scale_color_manual(values = c("SAE" = "#1B7F1B", "Death" = "#B8860B", "DALY" = "#A23B72")) +
-    scale_shape_manual(values = c("Disease blocking only" = 21, "Disease and infection blocking" = 24)) +
+    scale_color_manual(name   = "Outcome",
+                       values = c("SAE" = "#1B7F1B", "Death" = "#B8860B", "DALY" = "#A23B72")) +
+    scale_shape_manual(name   = "Vaccine protection mechanism",
+                       values = c("Disease blocking only" = 21, "Disease and infection blocking" = 24)) +
     
-    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
-    scale_x_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +
+    scale_x_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +
     
     labs(
       title = paste("Benefit-risk Assessment:", target_outcome),
-      x = "Excess adverse outcomes (per 10,000 vaccinated)",
-      y = "Averted outcomes (per 10,000 vaccinated)"
+      x = "Vaccine related excess outcome (per 10,000 vaccinated individuals)",
+      y = "Outcomes averted by vaccination (per 10,000 vaccinated individuals)"
     ) +
     theme_bw() +
     theme(legend.position = "right", strip.text = element_text(face = "bold"))
@@ -308,17 +310,10 @@ plot_daly
 plot_sae
 plot_death
 
-combined_plot <- plot_vaccine_mechanism_final / plot_brr_ori + 
-  plot_annotation(
-    tag_levels = 'A',
-    tag_prefix = '',
-    tag_suffix = '.',
-    theme = theme(
-      plot.tag = element_text(face = "bold", size = 18, hjust = 0, vjust = 1)
-    )
-  )
 
-ggsave("06_Results/brr_final_plot2.pdf", plot = combined_plot, width = 10, height = 11)
+ggsave("06_Results/brr_daly_ori.pdf", plot = plot_daly, width = 10, height = 8)
+ggsave("06_Results/brr_death_ori.pdf", plot = plot_death, width = 10, height = 8)
+ggsave("06_Results/brr_sae_ori.pdf", plot = plot_sae, width = 10, height = 8)
 
 ################################################################################
 # table 
@@ -344,7 +339,7 @@ summary_table2 <- summary_df %>%
     brr_lo  = exp(log(brr_med) - z * se_logb),
     brr_hi  = exp(log(brr_med) + z * se_logb)
   ) %>%
-  select(-ends_with("2"))
+  dplyr::select(-ends_with("2"))
 
 brr_table_long <- summary_table2 %>%
   mutate(

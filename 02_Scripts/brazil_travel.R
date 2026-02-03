@@ -795,90 +795,40 @@ ar_summary_all <- psa_df %>%
 ################################################################################
 ## brr space
 ################################################################################
-# --- STEP 1: Standardize Data Types ---
-
-
 ## three data
 
 psa_data_lo  <- psa_df %>% filter(ar_level == "lo")
 psa_data_mid <- psa_df %>% filter(ar_level == "mid")
 psa_data_hi  <- psa_df %>% filter(ar_level == "hi")
 
-br_space_data_benefit <- psa_data_mid %>%
-  mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d"))) %>%
-  pivot_longer(
-    cols = c(
-      excess_10k_sae, excess_10k_death,
-      averted_10k_sae, averted_10k_death
-    ),
-    names_to = c(".value", "outcome"),
-    names_pattern = "(excess_10k|averted_10k)_(sae|death)"
-  ) %>%
-  mutate(outcome = dplyr::recode(outcome, "sae" = "SAE", "death" = "Death")) %>%
-  group_by(AR_total_pct, age_group, days, outcome) %>%
-  summarise(
-    # x-axis: vaccine risk
-    x_med = median(excess_10k),
-    x_lo  = quantile(excess_10k, 0.025),
-    x_hi  = quantile(excess_10k, 0.975),
-    
-    # y-axis: PURE benefit (infection-related outcomes averted)
-    y_med = median(averted_10k),
-    y_lo  = quantile(averted_10k, 0.025),
-    y_hi  = quantile(averted_10k, 0.975),
-    
-    .groups = "drop"
-  )
+# br data for mid
+br_space_data_benefit_mid <- fn_br_space_benefit(psa_data_mid)
 
-br_space_sd <- psa_data_mid %>%
-  mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d"))) %>%
-  pivot_longer(
-    cols = c(
-      excess_10k_sae, excess_10k_death,
-      averted_10k_sae, averted_10k_death
-    ),
-    names_to = c(".value", "outcome"),
-    names_pattern = "(excess_10k|averted_10k)_(sae|death)"
-  ) %>%
-  mutate(outcome = dplyr::recode(outcome, "sae" = "SAE", "death" = "Death")) %>%
-  group_by(AR_total_pct, age_group, days, outcome) %>%
-  summarise(
-    x_med = median(excess_10k, na.rm = TRUE),
-    x_lo = quantile(excess_10k, 0.025, na.rm = TRUE),
-    x_hi = quantile(excess_10k, 0.975, na.rm = TRUE),
-    
-    
-    y_med = median(averted_10k, na.rm = TRUE),
-    y_lo = quantile(averted_10k, 0.025, na.rm = TRUE),
-    y_hi = quantile(averted_10k, 0.975, na.rm = TRUE),
-    
-    
-    .groups = "drop"
-  )
+br_space_sd_mid <- fn_br_space_event(psa_data_mid)
 
-# 2) DALY (daly_sae = risk, daly_averted = benefit)
-br_space_daly <- psa_data_mid %>%
-  mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d")),
-         outcome = "DALY") %>%
-  group_by(AR_total_pct, age_group, days, outcome) %>%
-  summarise(
-    x_med = median(daly_sae, na.rm = TRUE),
-    x_lo = quantile(daly_sae, 0.025, na.rm = TRUE),
-    x_hi = quantile(daly_sae, 0.975, na.rm = TRUE),
-    
-    
-    y_med = median(daly_averted, na.rm = TRUE),
-    y_lo = quantile(daly_averted, 0.025, na.rm = TRUE),
-    y_hi = quantile(daly_averted, 0.975, na.rm = TRUE),
-    
-    
-    .groups = "drop"
-  )
+br_space_daly_mid <- fn_br_space_daly(psa_data_mid)
 
-br_representative_benefit <- bind_rows(br_space_sd, br_space_daly)
+# br data for lo
+br_space_data_benefit_lo <- fn_br_space_benefit(psa_data_lo)
 
+br_space_sd_lo <- fn_br_space_event(psa_data_lo)
 
-br_representative_benefit <- br_representative_benefit %>%
+br_space_daly_lo <- fn_br_space_daly(psa_data_lo)
+
+# br data for hi
+br_space_data_benefit_hi <- fn_br_space_benefit(psa_data_hi)
+
+br_space_sd_hi <- fn_br_space_event(psa_data_hi)
+
+br_space_daly_hi <- fn_br_space_daly(psa_data_hi)
+
+# combining data
+br_representative_benefit_mid <- bind_rows(br_space_sd_mid, br_space_daly_mid)
+br_representative_benefit_lo  <- bind_rows(br_space_sd_lo, br_space_daly_lo)
+br_representative_benefit_hi  <- bind_rows(br_space_sd_hi, br_space_daly_hi)
+
+# add AR category 
+br_representative_benefit_mid <- br_representative_benefit_mid %>%
   mutate(
     age_group = ifelse(age_group == "65", "65+", age_group),
     ar_category = case_when(
@@ -892,37 +842,47 @@ br_representative_benefit <- br_representative_benefit %>%
   filter(!is.na(ar_category)) %>%
   dplyr::rename(AgeCat = age_group) 
 
-panel_ranges <- br_representative_benefit %>%
-  group_by(outcome, ar_category, days) %>%
-  summarise(
-    x_min = min(c(0, x_lo), na.rm = TRUE),
-    x_max = max(x_hi, na.rm = TRUE) * 1.05,
-    y_min = min(c(0, y_lo), na.rm = TRUE),
-    y_max = max(y_hi, na.rm = TRUE) * 1.05,
-    .groups = "drop"
-  )
 
-bg_grid_optimized <- panel_ranges %>%
-  rowwise() %>%
-  do({
-    panel_data <- .
-    
-    x_seq <- seq(panel_data$x_min, panel_data$x_max, length.out = 200)
-    y_seq <- seq(panel_data$y_min, panel_data$y_max, length.out = 200)
-    
-    grid <- expand.grid(x = x_seq, y = y_seq)
-    
-    grid$brr <- with(grid, ifelse(x > 0, y / x, NA_real_))
-    grid$log10_brr <- log10(grid$brr)
-    
-    grid$ar_level    <- panel_data$ar_level
-    grid$outcome     <- panel_data$outcome
-    grid$ar_category <- panel_data$ar_category
-    grid$days        <- panel_data$days
-    
-    grid
-  }) %>%
-  ungroup()
+br_representative_benefit_lo <- br_representative_benefit_lo %>%
+  mutate(
+    age_group = ifelse(age_group == "65", "65+", age_group),
+    ar_category = case_when(
+      AR_total_pct < 5                    ~ "<5%",
+      TRUE                                ~ NA_character_
+    ),
+    ar_category = factor(ar_category, levels = c("<5%"))
+  ) %>%
+  filter(!is.na(ar_category)) %>%
+  dplyr::rename(AgeCat = age_group) 
+
+br_representative_benefit_hi <- br_representative_benefit_hi %>%
+  mutate(
+    age_group = ifelse(age_group == "65", "65+", age_group),
+    ar_category = case_when(
+      AR_total_pct < 5                    ~ "<5%",
+      AR_total_pct >= 5  & AR_total_pct < 20 ~ "5–30%",
+      AR_total_pct >= 10   ~ "30%+",
+      TRUE                                ~ NA_character_
+    ),
+    ar_category = factor(ar_category, levels = c("<5%", "5–30%", "30%+"))
+  ) %>%
+  filter(!is.na(ar_category)) %>%
+  dplyr::rename(AgeCat = age_group) 
+
+panel_ranges_mid <- fn_panel_range(br_representative_benefit_mid)
+panel_ranges_lo <- fn_panel_range(br_representative_benefit_lo)
+panel_ranges_hi <- fn_panel_range(br_representative_benefit_hi)
+
+bg_grid_optimized_mid <- fn_br_grid(panel_ranges_mid)
+bg_grid_optimized_lo <- fn_br_grid(panel_ranges_lo)
+bg_grid_optimized_hi <- fn_br_grid(panel_ranges_hi)
+
+br_summarized_mid <- fn_br_summ(br_representative_benefit_mid)
+br_summarized_lo <- fn_br_summ(br_representative_benefit_lo)
+br_summarized_hi <- fn_br_summ(br_representative_benefit_hi)
+
+#### make plots ----------------------------------------------------------------
+## -----------------------------------------------------------------------------
 
 log_min <- -2
 log_max <- 2
@@ -944,53 +904,7 @@ br_summarized <- br_representative_benefit %>%
     .groups = "drop"
   )
 
-
-plot_brr_outcome <- function(br_summarized, bg_grid_optimized, 
-                             target_outcome, title_text, color_val) {
-  
-  plot_data <- br_summarized %>% 
-    filter(.data$outcome == target_outcome)
-  
-  plot_bg <- bg_grid_optimized %>% 
-    filter(.data$outcome == target_outcome)
-
-  ggplot() +
-    geom_raster(
-      data = plot_bg,
-      aes(x = x, y = y, fill = log10_brr),
-      interpolate = TRUE
-    ) +
-    scale_fill_gradient2(
-      name = "Benefit–risk ratio",
-      low = "#ca0020", mid = "#f7f7f7", high = "#0571b0",
-      midpoint = 0, limits = c(log_min, log_max),
-      breaks = log_range, labels = brr_labels,
-      oob = scales::squish, na.value = "white"
-    ) +
-    
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4) +
-    
-    geom_errorbar(data = plot_data, aes(x = x_med, ymin = y_lo, ymax = y_hi), 
-                  color = color_val, width = 0, linewidth = 0.6) +
-    geom_errorbarh(data = plot_data, aes(y = y_med, xmin = x_lo, xmax = x_hi), 
-                   color = color_val, height = 0, linewidth = 0.6) +
-    geom_point(data = plot_data, aes(x = x_med, y = y_med, shape = AgeCat), 
-               fill = "white", color = color_val, size = 3, stroke = 1) +
-    
-    facet_wrap(~ ar_category + days, scales = "free", ncol = 4) +
-    
-    scale_shape_manual(values = c("1-11"=21, "12-17"=22, "18-64"=23, "65+"=24), name = "Age group") +
-    scale_x_continuous(expand = c(0, 0)) +
-    scale_y_continuous(expand = c(0, 0)) +
-    
-    labs(title = title_text, x = "Excess Risk", y = "Averted Outcome") +
-    theme_bw() +
-    theme(
-      panel.grid = element_blank(),
-      strip.background = element_rect(fill = "gray95"),
-      legend.position = "right"
-    )
-}
+### plots mid / 95%UIs
 
 p_daly_mid  <- plot_brr_outcome(br_summarized_mid, bg_grid_optimized_mid,
                                 "DALY",  "Benefit-Risk Assessment: DALY",  "#A23B72")
@@ -1001,8 +915,6 @@ p_death_mid <- plot_brr_outcome(br_summarized_mid, bg_grid_optimized_mid,
 p_sae_mid   <- plot_brr_outcome(br_summarized_mid, bg_grid_optimized_mid,
                                 "SAE",   "Benefit-Risk Assessment: SAE",   "#1B7F1B")
 
-
-## uncertainty
 p_daly_lo  <- plot_brr_outcome(br_summarized_lo, bg_grid_optimized_lo,
                                 "DALY",  "Benefit-Risk Assessment: DALY",  "#A23B72")
 
@@ -1011,7 +923,6 @@ p_death_lo <- plot_brr_outcome(br_summarized_lo, bg_grid_optimized_lo,
 
 p_sae_lo   <- plot_brr_outcome(br_summarized_lo, bg_grid_optimized_lo,
                                 "SAE",   "Benefit-Risk Assessment: SAE",   "#1B7F1B")
-
 
 p_daly_hi  <- plot_brr_outcome(br_summarized_hi, bg_grid_optimized_hi,
                                "DALY",  "Benefit-Risk Assessment: DALY",  "#A23B72")
@@ -1025,39 +936,61 @@ p_sae_hi   <- plot_brr_outcome(br_summarized_hi, bg_grid_optimized_hi,
 ################################################################################
 # table 
 ################################################################################
-ar_summary_all <- psa_df %>%
+ar_summary_all <- psa_data_mid %>%
   pivot_longer(
-    cols = c(
-      brr_sae, brr_death, brr_daly
-    ),
+    cols = c(brr_sae, brr_death, brr_daly),
     names_to = c(".value", "outcome"),
     names_pattern = "(brr|net_10k)_(sae|death|daly)"
   ) %>%
   mutate(
-    outcome = dplyr::recode(
-      outcome,
-      "sae"  = "SAE",
-      "death" = "Death",
-      "daly" = "DALY"
+    outcome = dplyr::recode(outcome,
+                            "sae"   = "SAE",
+                            "death" = "Death",
+                            "daly"  = "DALY"),
+    days = factor(days, levels = c("7d", "14d", "30d", "90d")),
+    age_group = ifelse(age_group == "65", "65+", age_group),
+    ar_category = case_when(
+      AR_total_pct < 1                       ~ "<1%",
+      AR_total_pct >= 1  & AR_total_pct < 10 ~ "1–10%",
+      AR_total_pct >= 10                     ~ "10%+",
+      TRUE                                   ~ NA_character_
     ),
-    days = factor(days, levels = c("7d", "14d", "30d", "90d"))
+    ar_category = factor(ar_category, levels = c("<1%", "1–10%", "10%+"))
   ) %>%
-  group_by(AR_total_pct, age_group, days, outcome, state) %>%
+  group_by(ar_category, age_group, days, outcome) %>%
   summarise(
     brr_med = median(brr, na.rm = TRUE),
     brr_lo  = quantile(brr, 0.025, na.rm = TRUE),
     brr_hi  = quantile(brr, 0.975, na.rm = TRUE),
     .groups = "drop"
-  ) %>% 
-  mutate(
-    age_group = ifelse(age_group == "65", "65+", age_group),
-    ar_category = case_when(
-      AR_total_pct < 1                    ~ "<1%",
-      AR_total_pct >= 1  & AR_total_pct < 10 ~ "1-10%",
-      AR_total_pct >= 10   ~ "10%+",
-      TRUE                                ~ NA_character_
-    ),
-    ar_category = factor(ar_category, levels = c("<1%", "1–10%", "10%"))
   )
 
+ar_table_wide <- ar_summary_all %>%
+  mutate(
+    brr_formatted = sprintf("%.2f [%.2f–%.2f]", brr_med, brr_lo, brr_hi)
+  ) %>%
+  select(outcome, ar_category, age_group, days, brr_formatted) %>%
+  pivot_wider(
+    names_from = days,
+    values_from = brr_formatted
+  ) %>%
+  arrange(outcome, ar_category, age_group)
 
+idx_outcome <- table(ar_table_wide$outcome)
+
+kable(
+  ar_table_wide,
+  format = "html",
+  col.names = c("Outcome", "Attack Rate", "Age Group",
+                "7 days", "14 days", "30 days", "90 days"),
+  caption = "Benefit–Risk Ratio (BRR) by Outcome, Attack Rate Category, Age Group, and Travel Duration",
+  align = c("l", "c", "c", "r", "r", "r", "r")
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    font_size = 12
+  ) %>%
+  pack_rows(index = idx_outcome) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)

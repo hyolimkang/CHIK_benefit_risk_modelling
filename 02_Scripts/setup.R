@@ -8,7 +8,7 @@ setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandT
 
 # load packages
 pacman::p_load(
-  dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr,
+  dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr, flextable,
   cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern
 )
 
@@ -394,6 +394,55 @@ compute_daly_one <- function(age_group,
     )
   )
 }
+
+## br space traveller function
+plot_brr_outcome <- function(br_summarized, bg_grid_optimized, 
+                             target_outcome, title_text, color_val) {
+  
+  plot_data <- br_summarized %>% 
+    filter(.data$outcome == target_outcome)
+  
+  plot_bg <- bg_grid_optimized %>% 
+    filter(.data$outcome == target_outcome)
+  
+  ggplot() +
+    geom_raster(
+      data = plot_bg,
+      aes(x = x, y = y, fill = log10_brr),
+      interpolate = TRUE
+    ) +
+    scale_fill_gradient2(
+      name = "Benefit–risk ratio",
+      low = "#ca0020", mid = "#f7f7f7", high = "#0571b0",
+      midpoint = 0, limits = c(log_min, log_max),
+      breaks = log_range, labels = brr_labels,
+      oob = scales::squish, na.value = "white"
+    ) +
+    
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4) +
+    
+    geom_errorbar(data = plot_data, aes(x = x_med, ymin = y_lo, ymax = y_hi), 
+                  color = color_val, width = 0, linewidth = 0.6) +
+    geom_errorbarh(data = plot_data, aes(y = y_med, xmin = x_lo, xmax = x_hi), 
+                   color = color_val, height = 0, linewidth = 0.6) +
+    geom_point(data = plot_data, aes(x = x_med, y = y_med, shape = AgeCat), 
+               fill = "white", color = color_val, size = 3, stroke = 1) +
+    
+    facet_wrap(~ ar_category + days, scales = "free", ncol = 4) +
+    
+    scale_shape_manual(values = c("1-11"=21, "12-17"=22, "18-64"=23, "65+"=24), name = "Age group") +
+    scale_x_continuous(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0)) +
+    
+    labs(title = title_text, x = "Excess Risk", y = "Averted Outcome") +
+    theme_bw() +
+    theme(
+      panel.grid = element_blank(),
+      strip.background = element_rect(fill = "gray95"),
+      legend.position = "right"
+    )
+}
+
 
 ############################################ end of function ###################
 

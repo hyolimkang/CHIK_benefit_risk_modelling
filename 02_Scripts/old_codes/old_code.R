@@ -628,3 +628,139 @@ for (d in seq_len(nrow(lhs_sample))) {
     cat("Completed", d, "of", nrow(lhs_sample), "PSA draws\n")
   }
 }
+
+
+
+
+################################################################################
+## brr space
+################################################################################
+# --- STEP 1: Standardize Data Types ---
+
+
+## three data
+
+psa_data_lo  <- psa_df %>% filter(ar_level == "lo")
+psa_data_mid <- psa_df %>% filter(ar_level == "mid")
+psa_data_hi  <- psa_df %>% filter(ar_level == "hi")
+
+br_space_data_benefit <- psa_data_mid %>%
+  mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d"))) %>%
+  pivot_longer(
+    cols = c(
+      excess_10k_sae, excess_10k_death,
+      averted_10k_sae, averted_10k_death
+    ),
+    names_to = c(".value", "outcome"),
+    names_pattern = "(excess_10k|averted_10k)_(sae|death)"
+  ) %>%
+  mutate(outcome = dplyr::recode(outcome, "sae" = "SAE", "death" = "Death")) %>%
+  group_by(AR_total_pct, age_group, days, outcome) %>%
+  summarise(
+    # x-axis: vaccine risk
+    x_med = median(excess_10k),
+    x_lo  = quantile(excess_10k, 0.025),
+    x_hi  = quantile(excess_10k, 0.975),
+    
+    # y-axis: PURE benefit (infection-related outcomes averted)
+    y_med = median(averted_10k),
+    y_lo  = quantile(averted_10k, 0.025),
+    y_hi  = quantile(averted_10k, 0.975),
+    
+    .groups = "drop"
+  )
+
+br_space_sd <- psa_data_mid %>%
+  mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d"))) %>%
+  pivot_longer(
+    cols = c(
+      excess_10k_sae, excess_10k_death,
+      averted_10k_sae, averted_10k_death
+    ),
+    names_to = c(".value", "outcome"),
+    names_pattern = "(excess_10k|averted_10k)_(sae|death)"
+  ) %>%
+  mutate(outcome = dplyr::recode(outcome, "sae" = "SAE", "death" = "Death")) %>%
+  group_by(AR_total_pct, age_group, days, outcome) %>%
+  summarise(
+    x_med = median(excess_10k, na.rm = TRUE),
+    x_lo = quantile(excess_10k, 0.025, na.rm = TRUE),
+    x_hi = quantile(excess_10k, 0.975, na.rm = TRUE),
+    
+    
+    y_med = median(averted_10k, na.rm = TRUE),
+    y_lo = quantile(averted_10k, 0.025, na.rm = TRUE),
+    y_hi = quantile(averted_10k, 0.975, na.rm = TRUE),
+    
+    
+    .groups = "drop"
+  )
+
+# 2) DALY (daly_sae = risk, daly_averted = benefit)
+br_space_daly <- psa_data_mid %>%
+  mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d")),
+         outcome = "DALY") %>%
+  group_by(AR_total_pct, age_group, days, outcome) %>%
+  summarise(
+    x_med = median(daly_sae, na.rm = TRUE),
+    x_lo = quantile(daly_sae, 0.025, na.rm = TRUE),
+    x_hi = quantile(daly_sae, 0.975, na.rm = TRUE),
+    
+    
+    y_med = median(daly_averted, na.rm = TRUE),
+    y_lo = quantile(daly_averted, 0.025, na.rm = TRUE),
+    y_hi = quantile(daly_averted, 0.975, na.rm = TRUE),
+    
+    
+    .groups = "drop"
+  )
+
+br_representative_benefit <- bind_rows(br_space_sd, br_space_daly)
+
+
+br_representative_benefit <- br_representative_benefit %>%
+  mutate(
+    age_group = ifelse(age_group == "65", "65+", age_group),
+    ar_category = case_when(
+      AR_total_pct < 1                    ~ "<1%",
+      AR_total_pct >= 1  & AR_total_pct < 10 ~ "1–10%",
+      AR_total_pct >= 10   ~ "10%+",
+      TRUE                                ~ NA_character_
+    ),
+    ar_category = factor(ar_category, levels = c("<1%", "1–10%", "10%+"))
+  ) %>%
+  filter(!is.na(ar_category)) %>%
+  dplyr::rename(AgeCat = age_group) 
+
+panel_ranges <- br_representative_benefit %>%
+  group_by(outcome, ar_category, days) %>%
+  summarise(
+    x_min = min(c(0, x_lo), na.rm = TRUE),
+    x_max = max(x_hi, na.rm = TRUE) * 1.05,
+    y_min = min(c(0, y_lo), na.rm = TRUE),
+    y_max = max(y_hi, na.rm = TRUE) * 1.05,
+    .groups = "drop"
+  )
+
+bg_grid_optimized <- panel_ranges %>%
+  rowwise() %>%
+  do({
+    panel_data <- .
+    
+    x_seq <- seq(panel_data$x_min, panel_data$x_max, length.out = 200)
+    y_seq <- seq(panel_data$y_min, panel_data$y_max, length.out = 200)
+    
+    grid <- expand.grid(x = x_seq, y = y_seq)
+    
+    grid$brr <- with(grid, ifelse(x > 0, y / x, NA_real_))
+    grid$log10_brr <- log10(grid$brr)
+    
+    grid$ar_level    <- panel_data$ar_level
+    grid$outcome     <- panel_data$outcome
+    grid$ar_category <- panel_data$ar_category
+    grid$days        <- panel_data$days
+    
+    grid
+  }) %>%
+  ungroup()
+

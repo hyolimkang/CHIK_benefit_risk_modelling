@@ -1118,14 +1118,11 @@ plot_brr_outcome <- function(target_outcome, title_text, color_val) {
     )
 }
 p_daly  <- plot_brr_outcome("DALY",  "Benefit-Risk Assessment: DALY",  "#A23B72")
-=======
 ### plots mid / 95%UIs
->>>>>>> 0aa9c83524ba3d0ac7a14669d9c470372f0b0233
 
 p_death <- plot_brr_outcome("Death", "Benefit-Risk Assessment: Death", "#B8860B")
 p_sae   <- plot_brr_outcome("SAE",   "Benefit-Risk Assessment: SAE",   "#1B7F1B")
 
-<<<<<<< HEAD
 p_daly
 p_death
 p_sae
@@ -1153,7 +1150,6 @@ p_death_hi <- plot_brr_outcome(br_summarized_hi, bg_grid_optimized_hi,
 
 p_sae_hi   <- plot_brr_outcome(br_summarized_hi, bg_grid_optimized_hi,
                                "SAE",   "Benefit-Risk Assessment: SAE",   "#1B7F1B")
->>>>>>> 0aa9c83524ba3d0ac7a14669d9c470372f0b0233
 
 ################################################################################
 # table 

@@ -362,7 +362,13 @@ brr_table_wide <- brr_table_long %>%
     names_from  = VE_col,
     values_from = brr_formatted
   ) %>%
-  arrange(outcome, scenario, age_group)
+  arrange(outcome, scenario, age_group)%>%
+  dplyr::select(-scenario) %>%
+  dplyr::rename(
+    `Outcome` = outcome,
+    `Age group` = age_group
+  ) %>%
+  arrange(`Outcome`, `Age group`)
 
 idx_outcome <- table(brr_table_wide$outcome)
 

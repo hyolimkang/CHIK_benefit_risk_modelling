@@ -114,7 +114,293 @@ compute_ar_travel <- function(foi_daily, entry_day, D) {
   1 - exp(-foi_travel)
 }
 
-# LHS Samples
+# functions
+fn_br_space_benefit <- function(psa_data, 
+                                na_rm = TRUE,
+                                days_levels = c("7d", "14d", "30d", "90d")){
+  
+  br_space_data_benefit <- psa_data %>%
+    mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d"))) %>%
+    pivot_longer(
+      cols = c(
+        excess_10k_sae, excess_10k_death,
+        averted_10k_sae, averted_10k_death
+      ),
+      names_to = c(".value", "outcome"),
+      names_pattern = "(excess_10k|averted_10k)_(sae|death)"
+    ) %>%
+    mutate(outcome = dplyr::recode(outcome, "sae" = "SAE", "death" = "Death")) %>%
+    group_by(AR_total_pct, age_group, days, outcome) %>%
+    summarise(
+      # x-axis: vaccine risk
+      x_med = median(excess_10k),
+      x_lo  = quantile(excess_10k, 0.025),
+      x_hi  = quantile(excess_10k, 0.975),
+      
+      # y-axis: PURE benefit (infection-related outcomes averted)
+      y_med = median(averted_10k),
+      y_lo  = quantile(averted_10k, 0.025),
+      y_hi  = quantile(averted_10k, 0.975),
+      
+      .groups = "drop"
+    )
+  
+  return(br_space_data_benefit = br_space_data_benefit)
+  
+}
+
+
+fn_br_space_event <- function(psa_data, 
+                              na_rm = TRUE,
+                              days_levels = c("7d", "14d", "30d", "90d")) {
+  
+  br_space_sd <- psa_data %>%
+    mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d"))) %>%
+    pivot_longer(
+      cols = c(
+        excess_10k_sae, excess_10k_death,
+        averted_10k_sae, averted_10k_death
+      ),
+      names_to = c(".value", "outcome"),
+      names_pattern = "(excess_10k|averted_10k)_(sae|death)"
+    ) %>%
+    mutate(outcome = dplyr::recode(outcome, "sae" = "SAE", "death" = "Death")) %>%
+    group_by(AR_total_pct, age_group, days, outcome) %>%
+    summarise(
+      x_med = median(excess_10k, na.rm = TRUE),
+      x_lo = quantile(excess_10k, 0.025, na.rm = TRUE),
+      x_hi = quantile(excess_10k, 0.975, na.rm = TRUE),
+      
+      
+      y_med = median(averted_10k, na.rm = TRUE),
+      y_lo = quantile(averted_10k, 0.025, na.rm = TRUE),
+      y_hi = quantile(averted_10k, 0.975, na.rm = TRUE),
+      
+      
+      .groups = "drop"
+    )
+  
+  return(br_space_sd = br_space_sd)
+  
+} 
+
+
+fn_br_space_daly <- function(psa_data, 
+                             na_rm = TRUE,
+                             days_levels = c("7d", "14d", "30d", "90d")) {
+  
+  br_space_daly <- psa_data %>%
+    mutate(days = factor(days, levels = c("7d", "14d", "30d", "90d")),
+           outcome = "DALY") %>%
+    group_by(AR_total_pct, age_group, days, outcome) %>%
+    summarise(
+      x_med = median(daly_sae, na.rm = TRUE),
+      x_lo = quantile(daly_sae, 0.025, na.rm = TRUE),
+      x_hi = quantile(daly_sae, 0.975, na.rm = TRUE),
+      
+      
+      y_med = median(daly_averted, na.rm = TRUE),
+      y_lo = quantile(daly_averted, 0.025, na.rm = TRUE),
+      y_hi = quantile(daly_averted, 0.975, na.rm = TRUE),
+      
+      
+      .groups = "drop"
+    )
+  
+  return(br_space_daly = br_space_daly)
+  
+}
+
+
+fn_panel_range <- function(br_representative_benefit){
+  
+  panel_ranges <- br_representative_benefit %>%
+    group_by(outcome, ar_category, days) %>%
+    summarise(
+      x_min = min(c(0, x_lo), na.rm = TRUE),
+      x_max = max(x_hi, na.rm = TRUE) * 1.05,
+      y_min = min(c(0, y_lo), na.rm = TRUE),
+      y_max = max(y_hi, na.rm = TRUE) * 1.05,
+      .groups = "drop"
+    )
+  
+  return(panel_ranges = panel_ranges)
+  
+}
+
+
+fn_br_grid  <- function (panel_ranges) {
+  
+  bg_grid_optimized <- panel_ranges %>%
+    rowwise() %>%
+    do({
+      panel_data <- .
+      
+      x_seq <- seq(panel_data$x_min, panel_data$x_max, length.out = 200)
+      y_seq <- seq(panel_data$y_min, panel_data$y_max, length.out = 200)
+      
+      grid <- expand.grid(x = x_seq, y = y_seq)
+      
+      grid$brr <- with(grid, ifelse(x > 0, y / x, NA_real_))
+      grid$log10_brr <- log10(grid$brr)
+      
+      grid$ar_level    <- panel_data$ar_level
+      grid$outcome     <- panel_data$outcome
+      grid$ar_category <- panel_data$ar_category
+      grid$days        <- panel_data$days
+      
+      grid
+    }) %>%
+    ungroup()
+  
+  return(bg_grid_optimized = bg_grid_optimized)
+  
+}
+
+
+fn_br_summ <- function(br_representative_benefit){
+  
+  br_summarized <- br_representative_benefit %>%
+    group_by(outcome, ar_category, days, AgeCat) %>%
+    summarise(
+      x_med = mean(x_med, na.rm = TRUE),
+      y_med = mean(y_med, na.rm = TRUE),
+      
+      x_lo = mean(x_lo, na.rm = TRUE),
+      x_hi = mean(x_hi, na.rm = TRUE),
+      y_lo = mean(y_lo, na.rm = TRUE),
+      y_hi = mean(y_hi, na.rm = TRUE),
+      
+      .groups = "drop"
+    )
+  
+  return(br_summarized = br_summarized)
+}
+
+##  function for DALY estimation
+# compute brr
+compute_daly_one <- function(age_group,
+                             deaths_10k = 0,
+                             hosp_10k = 0,
+                             nonhosp_symp_10k = 0,
+                             symp_10k = NULL,      
+                             sae_10k = 0,
+                             deaths_sae_10k = 0,
+                             draw_pars) {
+  
+  life_expectancy <- dplyr::case_when(
+    age_group == "1-11"  ~ draw_pars$le_lost_1_11,
+    age_group == "12-17" ~ draw_pars$le_lost_12_17,
+    age_group == "18-64" ~ draw_pars$le_lost_18_64, 
+    age_group == "65+"   ~ draw_pars$le_lost_65,
+    TRUE ~ NA_real_  
+  )
+  
+  # ---- split weights (acute/subacute/chronic durations) ----
+  p_acute  <- draw_pars$acute
+  p_subac  <- draw_pars$subac
+  p_chr6m  <- draw_pars$chr6m
+  p_chr12m <- draw_pars$chr12m
+  p_chr30m <- draw_pars$chr30m
+  
+  total_p <- p_acute + p_subac + p_chr6m + p_chr12m + p_chr30m
+  p_acute  <- p_acute  / total_p
+  p_subac  <- p_subac  / total_p
+  p_chr6m  <- p_chr6m  / total_p
+  p_chr12m <- p_chr12m / total_p
+  p_chr30m <- p_chr30m / total_p
+  
+  # ---- DW & durations ----
+  dw_hosp      <- draw_pars$dw_hosp
+  dw_nonhosp   <- draw_pars$dw_nonhosp
+  dw_subac     <- draw_pars$dw_subac
+  dw_chronic   <- draw_pars$dw_chronic
+  
+  dur_acute    <- draw_pars$dur_acute
+  dur_nonhosp  <- draw_pars$dur_nonhosp
+  dur_subac    <- draw_pars$dur_subac
+  dur_6m       <- draw_pars$dur_6m
+  dur_12m      <- draw_pars$dur_12m
+  dur_30m      <- draw_pars$dur_30m
+  
+  # =========================
+  # Disease (natural infection)
+  # =========================
+  yll_dz <- deaths_10k * life_expectancy
+  
+  # acute YLD (separate by hosp vs nonhosp)
+  yld_dz_hosp_acute    <- hosp_10k * dw_hosp    * dur_acute
+  yld_dz_nonhosp_acute <- nonhosp_symp_10k * dw_nonhosp * dur_nonhosp
+  
+  # chronic/subacute YLD (apply to symptomatic pool; if symp_10k not given, infer it)
+  if (is.null(symp_10k)) symp_10k <- hosp_10k + nonhosp_symp_10k
+  
+  dz_subac_10k <- symp_10k * p_subac
+  dz_6m_10k    <- symp_10k * p_chr6m
+  dz_12m_10k   <- symp_10k * p_chr12m
+  dz_30m_10k   <- symp_10k * p_chr30m
+  
+  yld_dz_subac <- dz_subac_10k * dw_subac   * dur_subac
+  yld_dz_6m    <- dz_6m_10k    * dw_chronic * dur_6m
+  yld_dz_12m   <- dz_12m_10k   * dw_chronic * dur_12m
+  yld_dz_30m   <- dz_30m_10k   * dw_chronic * dur_30m
+  
+  yld_dz <- yld_dz_hosp_acute + yld_dz_nonhosp_acute +
+    yld_dz_subac + yld_dz_6m + yld_dz_12m + yld_dz_30m
+  
+  daly_dz <- yll_dz + yld_dz
+  
+  # =========================
+  # Vaccine SAE
+  # =========================
+  yll_sae <- deaths_sae_10k * life_expectancy
+  
+  sae_acute_10k  <- sae_10k * p_acute
+  sae_subac_10k  <- sae_10k * p_subac
+  sae_6m_10k     <- sae_10k * p_chr6m
+  sae_12m_10k    <- sae_10k * p_chr12m
+  sae_30m_10k    <- sae_10k * p_chr30m
+  
+  yld_sae_acute <- sae_acute_10k * dw_hosp    * dur_acute
+  yld_sae_subac <- sae_subac_10k * dw_subac   * dur_subac
+  yld_sae_6m    <- sae_6m_10k    * dw_chronic * dur_6m
+  yld_sae_12m   <- sae_12m_10k   * dw_chronic * dur_12m
+  yld_sae_30m   <- sae_30m_10k   * dw_chronic * dur_30m
+  
+  yld_sae <- yld_sae_acute + yld_sae_subac + yld_sae_6m + yld_sae_12m + yld_sae_30m
+  daly_sae <- yll_sae + yld_sae
+  
+  list(
+    daly_dz = daly_dz,
+    yll_dz  = yll_dz,
+    yld_dz  = yld_dz,
+    daly_sae = daly_sae,
+    yll_sae  = yll_sae,
+    yld_sae  = yld_sae,
+    components = list(
+      # disease
+      yld_dz_hosp_acute = yld_dz_hosp_acute,
+      yld_dz_nonhosp_acute = yld_dz_nonhosp_acute,
+      yld_dz_subac = yld_dz_subac,
+      yld_dz_6m = yld_dz_6m,
+      yld_dz_12m = yld_dz_12m,
+      yld_dz_30m = yld_dz_30m,
+      # sae
+      yld_sae_acute = yld_sae_acute,
+      yld_sae_subac = yld_sae_subac,
+      yld_sae_6m = yld_sae_6m,
+      yld_sae_12m = yld_sae_12m,
+      yld_sae_30m = yld_sae_30m
+    )
+  )
+}
+
+############################################ end of function ###################
+
+##------------------------------------------------------------------------------
+## LHS Samples 
+##------------------------------------------------------------------------------
+
 set.seed(123)
 runs = 1000
 A <- randomLHS (n = runs, 
@@ -247,125 +533,5 @@ cols <- c(
 )
 colnames (lhs_sample) <- cols
 lhs_sample   <- as.data.frame(lhs_sample)
-
-##  function for DALY estimation
-# compute brr
-compute_daly_one <- function(age_group,
-                             deaths_10k = 0,
-                             hosp_10k = 0,
-                             nonhosp_symp_10k = 0,
-                             symp_10k = NULL,      
-                             sae_10k = 0,
-                             deaths_sae_10k = 0,
-                             draw_pars) {
-  
-  life_expectancy <- dplyr::case_when(
-    age_group == "1-11"  ~ draw_pars$le_lost_1_11,
-    age_group == "12-17" ~ draw_pars$le_lost_12_17,
-    age_group == "18-64" ~ draw_pars$le_lost_18_64, 
-    age_group == "65+"   ~ draw_pars$le_lost_65,
-    TRUE ~ NA_real_  
-  )
-  
-  # ---- split weights (acute/subacute/chronic durations) ----
-  p_acute  <- draw_pars$acute
-  p_subac  <- draw_pars$subac
-  p_chr6m  <- draw_pars$chr6m
-  p_chr12m <- draw_pars$chr12m
-  p_chr30m <- draw_pars$chr30m
-  
-  total_p <- p_acute + p_subac + p_chr6m + p_chr12m + p_chr30m
-  p_acute  <- p_acute  / total_p
-  p_subac  <- p_subac  / total_p
-  p_chr6m  <- p_chr6m  / total_p
-  p_chr12m <- p_chr12m / total_p
-  p_chr30m <- p_chr30m / total_p
-  
-  # ---- DW & durations ----
-  dw_hosp      <- draw_pars$dw_hosp
-  dw_nonhosp   <- draw_pars$dw_nonhosp
-  dw_subac     <- draw_pars$dw_subac
-  dw_chronic   <- draw_pars$dw_chronic
-  
-  dur_acute    <- draw_pars$dur_acute
-  dur_nonhosp  <- draw_pars$dur_nonhosp
-  dur_subac    <- draw_pars$dur_subac
-  dur_6m       <- draw_pars$dur_6m
-  dur_12m      <- draw_pars$dur_12m
-  dur_30m      <- draw_pars$dur_30m
-  
-  # =========================
-  # Disease (natural infection)
-  # =========================
-  yll_dz <- deaths_10k * life_expectancy
-  
-  # acute YLD (separate by hosp vs nonhosp)
-  yld_dz_hosp_acute    <- hosp_10k * dw_hosp    * dur_acute
-  yld_dz_nonhosp_acute <- nonhosp_symp_10k * dw_nonhosp * dur_nonhosp
-  
-  # chronic/subacute YLD (apply to symptomatic pool; if symp_10k not given, infer it)
-  if (is.null(symp_10k)) symp_10k <- hosp_10k + nonhosp_symp_10k
-  
-  dz_subac_10k <- symp_10k * p_subac
-  dz_6m_10k    <- symp_10k * p_chr6m
-  dz_12m_10k   <- symp_10k * p_chr12m
-  dz_30m_10k   <- symp_10k * p_chr30m
-  
-  yld_dz_subac <- dz_subac_10k * dw_subac   * dur_subac
-  yld_dz_6m    <- dz_6m_10k    * dw_chronic * dur_6m
-  yld_dz_12m   <- dz_12m_10k   * dw_chronic * dur_12m
-  yld_dz_30m   <- dz_30m_10k   * dw_chronic * dur_30m
-  
-  yld_dz <- yld_dz_hosp_acute + yld_dz_nonhosp_acute +
-    yld_dz_subac + yld_dz_6m + yld_dz_12m + yld_dz_30m
-  
-  daly_dz <- yll_dz + yld_dz
-  
-  # =========================
-  # Vaccine SAE
-  # =========================
-  yll_sae <- deaths_sae_10k * life_expectancy
-  
-  sae_acute_10k  <- sae_10k * p_acute
-  sae_subac_10k  <- sae_10k * p_subac
-  sae_6m_10k     <- sae_10k * p_chr6m
-  sae_12m_10k    <- sae_10k * p_chr12m
-  sae_30m_10k    <- sae_10k * p_chr30m
-  
-  yld_sae_acute <- sae_acute_10k * dw_hosp    * dur_acute
-  yld_sae_subac <- sae_subac_10k * dw_subac   * dur_subac
-  yld_sae_6m    <- sae_6m_10k    * dw_chronic * dur_6m
-  yld_sae_12m   <- sae_12m_10k   * dw_chronic * dur_12m
-  yld_sae_30m   <- sae_30m_10k   * dw_chronic * dur_30m
-  
-  yld_sae <- yld_sae_acute + yld_sae_subac + yld_sae_6m + yld_sae_12m + yld_sae_30m
-  daly_sae <- yll_sae + yld_sae
-  
-  list(
-    daly_dz = daly_dz,
-    yll_dz  = yll_dz,
-    yld_dz  = yld_dz,
-    daly_sae = daly_sae,
-    yll_sae  = yll_sae,
-    yld_sae  = yld_sae,
-    components = list(
-      # disease
-      yld_dz_hosp_acute = yld_dz_hosp_acute,
-      yld_dz_nonhosp_acute = yld_dz_nonhosp_acute,
-      yld_dz_subac = yld_dz_subac,
-      yld_dz_6m = yld_dz_6m,
-      yld_dz_12m = yld_dz_12m,
-      yld_dz_30m = yld_dz_30m,
-      # sae
-      yld_sae_acute = yld_sae_acute,
-      yld_sae_subac = yld_sae_subac,
-      yld_sae_6m = yld_sae_6m,
-      yld_sae_12m = yld_sae_12m,
-      yld_sae_30m = yld_sae_30m
-    )
-  )
-}
-
-############################################ end of function ###################
 
 

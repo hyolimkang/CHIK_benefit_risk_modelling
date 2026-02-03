@@ -8,7 +8,7 @@ setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandT
 
 # load packages
 pacman::p_load(
-  dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr, flextable, sf, raster, officer,
+  dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr, flextable, sf, raster, officer, viridis,
   cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern
 )
 

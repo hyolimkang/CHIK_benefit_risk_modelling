@@ -115,6 +115,36 @@ compute_ar_travel <- function(foi_daily, entry_day, D) {
 }
 
 # functions
+extract_phi_long <- function(sim_results) {
+  out <- list()
+  k <- 1L
+  
+  states <- names(sim_results)
+  for (st in states) {
+    ve_names <- names(sim_results[[st]])
+    for (ve in ve_names) {
+      cov_names <- names(sim_results[[st]][[ve]])
+      for (cv in cov_names) {
+        reps <- sim_results[[st]][[ve]][[cv]]
+        for (r in seq_along(reps)) {
+          phi <- reps[[r]]$sim_out$phi
+          
+          out[[k]] <- data.frame(
+            state = st,
+            VE    = ve,
+            cov   = cv,
+            rep   = r,
+            week  = seq_along(phi),
+            phi   = as.numeric(phi)
+          )
+          k <- k + 1L
+        }
+      }
+    }
+  }
+  do.call(rbind, out)
+}
+
 fn_br_space_benefit <- function(psa_data, 
                                 na_rm = TRUE,
                                 days_levels = c("7d", "14d", "30d", "90d")){

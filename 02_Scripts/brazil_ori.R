@@ -319,3 +319,11 @@ combined_plot <- plot_vaccine_mechanism_final / plot_brr_ori +
   )
 
 ggsave("06_Results/brr_final_plot2.pdf", plot = combined_plot, width = 10, height = 11)
+
+################################################################################
+# table 
+################################################################################
+
+
+
+

@@ -428,7 +428,8 @@ compute_daly_one <- function(age_group,
 
 ## br space traveller function
 plot_brr_outcome <- function(br_summarized, bg_grid_optimized, 
-                             target_outcome, title_text, color_val) {
+                             target_outcome, title_text, color_val,
+                             show_prop = TRUE) {
   
   plot_data <- br_summarized %>% 
     filter(.data$outcome == target_outcome)
@@ -436,11 +437,38 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
   plot_bg <- bg_grid_optimized %>% 
     filter(.data$outcome == target_outcome)
   
+  panel_prop <- plot_bg %>%
+    mutate(is_fav = !is.na(log10_brr) & log10_brr > 0) %>%
+    group_by(ar_category, days) %>%
+    summarise(prop_fav = mean(is_fav), .groups = "drop") %>%
+    mutate(label = ifelse(prop_fav < 0.005, "BRR>1: <1%",
+                          sprintf("BRR>1: %.0f%%", 100 * prop_fav)))
+  
+  panel_ranges <- plot_bg %>%
+    group_by(ar_category, days) %>%
+    summarise(
+      x_min = min(x, na.rm = TRUE),
+      x_max = max(x, na.rm = TRUE),
+      y_min = min(y, na.rm = TRUE),
+      y_max = max(y, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      x_lab = x_min + 0.02 * (x_max - x_min),   
+      y_lab = y_max - 0.04 * (y_max - y_min)    
+    )
+  
+  panel_prop <- panel_prop %>%
+    left_join(panel_ranges, by = c("ar_category", "days"))
+  
+  pd <- position_dodge(width = 0.6)
+  
   ggplot() +
     geom_raster(
       data = plot_bg,
       aes(x = x, y = y, fill = log10_brr),
-      interpolate = TRUE
+      interpolate = TRUE,
+      alpha = 0.85
     ) +
     scale_fill_gradient2(
       name = "Benefit–risk ratio",
@@ -450,16 +478,29 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
       oob = scales::squish, na.value = "white"
     ) +
     
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4, linewidth = 0.9, colour = "grey35") +
     
     geom_errorbar(data = plot_data, aes(x = x_med, ymin = y_lo, ymax = y_hi), 
-                  color = color_val, width = 0, linewidth = 0.6) +
+                  color = color_val, width = 0, linewidth = 0.6, position = pd) +
     geom_errorbarh(data = plot_data, aes(y = y_med, xmin = x_lo, xmax = x_hi), 
-                   color = color_val, height = 0, linewidth = 0.6) +
+                   color = color_val, height = 0, linewidth = 0.6, position = pd) +
     geom_point(data = plot_data, aes(x = x_med, y = y_med, shape = AgeCat), 
-               fill = "white", color = color_val, size = 3, stroke = 1) +
+               fill = "white", color = color_val, size = 3, stroke = 1, position = pd) +
     
+    {if (show_prop)
+      geom_label(
+        data = panel_prop,
+        aes(x = -Inf, y = Inf, label = label),
+        hjust = 0, vjust = 1,
+        size = 3,
+        inherit.aes = FALSE,
+        label.size = 0.25,
+        fill = "white", alpha = 0.75,
+        colour = "black"
+      )
+    } + 
     facet_wrap(~ ar_category + days, scales = "free", ncol = 4) +
+    #facet_grid(ar_category ~ days, scales="free") + 
     
     scale_shape_manual(values = c("1-11"=21, "12-17"=22, "18-64"=23, "65+"=24), name = "Age group") +
     scale_x_continuous(expand = c(0, 0)) +
@@ -470,7 +511,8 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
     theme(
       panel.grid = element_blank(),
       strip.background = element_rect(fill = "gray95"),
-      legend.position = "right"
+      legend.position = "right",
+      panel.spacing = unit(0.35, "lines")
     )
 }
 

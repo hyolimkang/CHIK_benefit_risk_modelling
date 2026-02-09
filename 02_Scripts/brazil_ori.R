@@ -362,6 +362,9 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
     #facet_grid(setting ~ AgeCat, scales = "free") +
     #facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
 
+    facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
+    
+>>>>>>> 01ce4aff7771b718580fcb6ff64f96a8446eef67
     scale_color_manual(
       name = "Outcome",
       values = c("SAE" = "#1B7F1B", "Death" = "#B8860B", "DALY" = "#A23B72")
@@ -371,6 +374,8 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
       values = c("Disease blocking only" = 21,
                  "Disease and infection blocking" = 24)
     ) +
+    
+    coord_cartesian(xlim = c(0, NA), ylim = c(0, NA), expand = FALSE) +
     
     #scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +
     #scale_x_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +

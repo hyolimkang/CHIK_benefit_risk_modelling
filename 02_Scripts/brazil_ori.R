@@ -234,77 +234,179 @@ y_min_buffered <- -y_max_buffered * 0.01
 # 4. Final Visualization
 # ------------------------------------------------------------------------------
 
-create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3) {
+create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
+                           grid_n = 150, pad = 1.10,
+                           show_prop = TRUE) {
   
-  # 1. outcome filtering
-  plot_data <- data %>% filter(outcome == target_outcome)
+  plot_data <- data %>%
+    filter(outcome == target_outcome)
   
-  # 2. outcome specific limits
   panel_limits <- plot_data %>%
     group_by(AgeCat) %>%
     summarise(
-      x_max = max(x_hi, na.rm = TRUE) * 1.1,
-      y_max = max(y_hi, na.rm = TRUE) * 1.1,
+      x_max_raw = max(x_hi, na.rm = TRUE),
+      y_max_raw = max(y_hi, na.rm = TRUE),
       .groups = "drop"
-    )
+    ) %>%
+    mutate(
+      x_max_raw = ifelse(is.finite(x_max_raw), x_max_raw, NA_real_),
+      y_max_raw = ifelse(is.finite(y_max_raw), y_max_raw, NA_real_),
+      x_min = 1e-6,    
+      y_min = 0,
+      x_max = x_max_raw * pad,
+      y_max = y_max_raw * pad
+    ) %>%
+    filter(!is.na(x_max), !is.na(y_max))
   
   bg_grid_specific <- panel_limits %>%
-    group_by(AgeCat) %>%
-    reframe({
-      x_seq <- seq(0, x_max, length.out = 100)
-      y_seq <- seq(0, y_max, length.out = 100)
-      grid <- expand.grid(x = x_seq, y = y_seq)
-      grid$brr <- grid$y / (grid$x + 1e-9)
-      grid$log10_brr <- pmax(pmin(log10(grid$brr), log_max), log_min)
-      grid
-    })
+    rowwise() %>%
+    do({
+      panel <- .
+      x_seq <- seq(panel$x_min, panel$x_max, length.out = grid_n)
+      y_seq <- seq(panel$y_min, panel$y_max, length.out = grid_n)
+      grid_df <- expand.grid(x = x_seq, y = y_seq)
+      
+      grid_df$brr <- grid_df$y / grid_df$x
+      grid_df$log10_brr <- log10(grid_df$brr)
+      
+      grid_df$log10_brr[!is.finite(grid_df$log10_brr)] <- NA_real_
+      grid_df$log10_brr <- pmax(pmin(grid_df$log10_brr, log_max), log_min)
+      
+      grid_df$is_fav <- !is.na(grid_df$log10_brr) & grid_df$log10_brr > 0
+      
+      grid_df$AgeCat <- panel$AgeCat
+      grid_df
+    }) %>%
+    ungroup() %>%
+    filter(!is.na(log10_brr))
   
-  # 4. ggplot 
+  panel_prop <- bg_grid_specific %>%
+    group_by(AgeCat) %>%
+    summarise(
+      prop_fav = mean(is_fav, na.rm = TRUE),
+      x_min = min(x, na.rm = TRUE),
+      x_max = max(x, na.rm = TRUE),
+      y_min = min(y, na.rm = TRUE),
+      y_max = max(y, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      label = ifelse(prop_fav < 0.005, "BRR>1: <1%",
+                     sprintf("BRR>1: %.0f%%", 100 * prop_fav)),
+      x_lab = x_min + 0.02 * (x_max - x_min),
+      y_lab = y_max - 0.02 * (y_max - y_min)
+    )
+  
   ggplot() +
     geom_raster(
       data = bg_grid_specific,
       aes(x = x, y = y, fill = log10_brr),
-      alpha = 0.8, interpolate = TRUE
+      alpha = 0.88,
+      interpolate = TRUE
     ) +
     scale_fill_gradient2(
       name = "Benefit–risk ratio",
-      low = "#ca0020", mid = "#f7f7f7", high = "#0571b0", midpoint = 0,
+      low = "#ca0020", mid = "#f7f7f7", high = "#0571b0",
+      midpoint = 0,
       limits = c(log_min, log_max),
       oob = scales::squish,
-      breaks = log_range, 
+      breaks = log_range,
       labels = brr_labels,
+      na.value = "white"
     ) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4) +
     
-    # error bar and points
-    geom_errorbar(data = plot_data, aes(x = x_med, ymin = y_lo, ymax = y_hi, color = outcome), width = 0) +
-    geom_errorbarh(data = plot_data, aes(y = y_med, xmin = x_lo, xmax = x_hi, color = outcome), height = 0) +
-    geom_point(data = plot_data, aes(x = x_med, y = y_med, shape = VE_label, color = outcome), 
-               size = 3, fill = "white", stroke = 1) +
+    geom_abline(
+      slope = 1, intercept = 0,
+      linetype = "dashed",
+      alpha = 0.55,
+      linewidth = 0.9,
+      colour = "grey35"
+    ) +
     
+    geom_errorbar(
+      data = plot_data,
+      aes(x = x_med, ymin = y_lo, ymax = y_hi, color = outcome),
+      width = 0, linewidth = 0.6
+    ) +
+    geom_errorbarh(
+      data = plot_data,
+      aes(y = y_med, xmin = x_lo, xmax = x_hi, color = outcome),
+      height = 0, linewidth = 0.6
+    ) +
+    geom_point(
+      data = plot_data,
+      aes(x = x_med, y = y_med, shape = VE_label, color = outcome),
+      size = 2.9,
+      fill = "white",
+      stroke = 1.1,
+      alpha = 0.95
+    ) +
+    
+    {if (show_prop)
+      geom_label(
+        data = panel_prop,
+        aes(x = x_lab, y = y_lab, label = label),
+        inherit.aes = FALSE,
+        hjust = 0, vjust = 1,
+        size = 3,
+        fill = "white",
+        alpha = 0.85,
+        colour = "black",
+        label.size = 0.25,
+        label.padding = unit(0.10, "lines")
+      )
+    } +
+    
+<<<<<<< HEAD
     # facet by age group
+    facet_wrap(~ setting + AgeCat, scales = "free", ncol = 4) +
+    #facet_grid(setting ~ AgeCat, scales = "free") +
+=======
     facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
+>>>>>>> 01ce4aff7771b718580fcb6ff64f96a8446eef67
     
-    scale_color_manual(name   = "Outcome",
-                       values = c("SAE" = "#1B7F1B", "Death" = "#B8860B", "DALY" = "#A23B72")) +
-    scale_shape_manual(name   = "Vaccine protection mechanism",
-                       values = c("Disease blocking only" = 21, "Disease and infection blocking" = 24)) +
+    scale_color_manual(
+      name = "Outcome",
+      values = c("SAE" = "#1B7F1B", "Death" = "#B8860B", "DALY" = "#A23B72")
+    ) +
+    scale_shape_manual(
+      name = "Vaccine protection mechanism",
+      values = c("Disease blocking only" = 21,
+                 "Disease and infection blocking" = 24)
+    ) +
     
-    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +
-    scale_x_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +
+<<<<<<< HEAD
+    #scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +
+    #scale_x_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +
+    coord_cartesian(xlim = c(0, NA), ylim = c(0, NA), expand = FALSE) + 
+=======
+    coord_cartesian(xlim = c(0, NA), ylim = c(0, NA), expand = FALSE) +
+>>>>>>> 01ce4aff7771b718580fcb6ff64f96a8446eef67
     
     labs(
-      title = paste("Benefit-risk Assessment:", target_outcome),
+      title = paste("Benefit–risk Assessment:", target_outcome),
       x = "Vaccine related excess outcome (per 10,000 vaccinated individuals)",
       y = "Outcomes averted by vaccination (per 10,000 vaccinated individuals)"
     ) +
+    
     theme_bw() +
-    theme(legend.position = "right", strip.text = element_text(face = "bold"))
+    theme(
+      panel.grid = element_blank(),
+      panel.border = element_rect(linewidth = 0.6),
+      strip.background = element_rect(fill = "gray95", linewidth = 0.6),
+      strip.text = element_text(face = "bold", size = 10),
+      axis.title = element_text(size = 11),
+      axis.text  = element_text(size = 9),
+      legend.position = "right",
+      legend.title = element_text(size = 10),
+      legend.text  = element_text(size = 9),
+      panel.spacing = unit(0.35, "lines")
+    )
 }
 
-plot_sae   <- create_br_plot(summary_df, "SAE")
-plot_death <- create_br_plot(summary_df, "Death")
-plot_daly  <- create_br_plot(summary_df, "DALY")
+plot_sae   <- create_br_plot(summary_long_setting, "SAE")
+plot_death <- create_br_plot(summary_long_setting, "Death")
+plot_daly  <- create_br_plot(summary_long_setting, "DALY")
 
 plot_daly
 plot_sae
@@ -341,7 +443,14 @@ summary_table2 <- summary_df %>%
   ) %>%
   dplyr::select(-ends_with("2"))
 
-brr_table_long <- summary_table2 %>%
+summary_table <- summary_df %>%
+  mutate(
+    brr_med = y_med / x_med,
+    brr_lo = y_lo / x_hi, 
+    brr_hi = y_hi / x_lo
+  )
+
+brr_table_long <- summary_table %>%
   mutate(
     age_group = AgeCat,
     brr_formatted = sprintf(
@@ -350,7 +459,7 @@ brr_table_long <- summary_table2 %>%
     ),
     VE_col = if ("VE_label" %in% names(.)) VE_label else paste0("VE ", percent(VE, accuracy = 1))
   ) %>%
-  select(outcome, scenario, age_group, VE_col, brr_formatted)
+  dplyr::select(outcome, scenario, age_group, VE_col, brr_formatted)
 
 brr_table_wide <- brr_table_long %>%
   pivot_wider(
@@ -365,7 +474,7 @@ brr_table_wide <- brr_table_long %>%
   ) %>%
   arrange(`Outcome`, `Age group`)
 
-idx_outcome <- table(brr_table_wide$outcome)
+idx_outcome <- table(brr_table_wide$Outcome)
 
 kable(
   brr_table_wide,

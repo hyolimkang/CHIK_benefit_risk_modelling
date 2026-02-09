@@ -102,6 +102,19 @@ all_draws_ix <- purrr::imap_dfr(postsim_vc_ixchiq_model, function(region_list, r
 # 1. symptomatic cases
 ## scaling rho
 set.seed(1)
+scale_symp_by_rho_pre <- function(pre_list, rho_vec) {
+  # pre_list: length n_draws, each is (age x week) matrix
+  # rho_vec: length n_draws
+  Map(function(mat, r) mat / r, pre_list, rho_vec)
+}
+
+scale_symp_by_rho_post <- function(post_arr, rho_vec) {
+  # post_arr: (age x week x draw)
+  # rho_vec: length draw
+  for (i in seq_along(rho_vec)) post_arr[,,i] <- post_arr[,,i] / rho_vec[i]
+  post_arr
+}
+
 
 all_draws_ix_true <- all_draws_ix %>%
   group_by(Region) %>%
@@ -116,20 +129,49 @@ all_draws_ix_true <- all_draws_ix %>%
   )
 
 # 2. Hospitalisation 
-calc_total_hosp_draws_rho <- function(pre_list, post_arr, hosp_rate, rho_vec) {
+make_hosp_draws <- function(symp_list, hosp_rate) {
+  lapply(symp_list, function(symp_matrix) {
+    sweep(symp_matrix, 1, hosp_rate, `*`)
+  })
+}
+
+calc_total_hosp_draws <- function(pre_list, post_arr, hosp_rate) {
+  # Pre
+  pre_hosp_list <- make_hosp_draws(pre_list, hosp_rate)
+  pre_arr <- simplify2array(pre_hosp_list)
+  if (length(dim(pre_arr)) == 2) pre_arr <- array(pre_arr, dim = c(dim(pre_arr), 1))
   
+  # Post
+  post_list <- lapply(seq_len(dim(post_arr)[3]), function(i) post_arr[ , , i])
+  post_hosp_list <- make_hosp_draws(post_list, hosp_rate)
+  post_arr2 <- simplify2array(post_hosp_list)
+  if (length(dim(post_arr2)) == 2) post_arr2 <- array(post_arr2, dim = c(dim(post_arr2), 1))
+  
+  # Align
+  n_draws <- min(dim(pre_arr)[3], dim(post_arr2)[3])
+  pre_arr   <- pre_arr[ , , 1:n_draws, drop = FALSE]
+  post_arr2 <- post_arr2[ , , 1:n_draws, drop = FALSE]
+  
+  # Sum
+  tibble(
+    draw_id    = seq_len(n_draws),
+    total_pre  = apply(pre_arr,  3, sum, na.rm = TRUE),
+    total_post = apply(post_arr2, 3, sum, na.rm = TRUE)
+  )
+}
+
+calc_total_hosp_draws_rho <- function(pre_list, post_arr, hosp_rate, rho_vec) {
   n_draws <- min(length(pre_list), dim(post_arr)[3], length(rho_vec))
   pre_list <- pre_list[1:n_draws]
-  post_arr <- post_arr[,,1:n_draws]
+  post_arr <- post_arr[,,1:n_draws, drop = FALSE]
   rho_vec  <- rho_vec[1:n_draws]
   
-  # 2) rho scaling (true symptomatic)
   pre_list_true <- scale_symp_by_rho_pre(pre_list, rho_vec)
   post_arr_true <- scale_symp_by_rho_post(post_arr, rho_vec)
   
-  # 3) hosp totals
   calc_total_hosp_draws(pre_list_true, post_arr_true, hosp_rate = hosp_rate)
 }
+
 set.seed(1)
 
 all_draws_hosp_true <- purrr::imap_dfr(postsim_vc_ixchiq_model, function(region_list, region_name) {
@@ -173,6 +215,55 @@ all_draws_hosp_true <- purrr::imap_dfr(postsim_vc_ixchiq_model, function(region_
 })
 
 # 3. Fatal
+make_fatal_hosp_draws <- function(symp_list, hosp_rate, fatal_rate, nh_fatal_rate) {
+  lapply(symp_list, function(symp_matrix) {
+    hospitalised     <- sweep(symp_matrix, 1, hosp_rate, `*`)
+    non_hospitalised <- symp_matrix - hospitalised
+    
+    fatal <- sweep(hospitalised, 1, fatal_rate, `*`) +
+      sweep(non_hospitalised, 1, nh_fatal_rate, `*`)
+    
+    list(
+      hosp  = hospitalised,
+      fatal = fatal
+    )
+  })
+}
+
+calc_total_hosp_draws <- function(pre_list, post_arr, hosp_rate, fatal_rate, nh_fatal_rate) {
+  # ── Pre ────────────────────────────────
+  pre_conv <- make_fatal_hosp_draws(pre_list, hosp_rate, fatal_rate, nh_fatal_rate)
+  pre_hosp_list <- lapply(pre_conv, `[[`, "hosp")
+  pre_arr <- simplify2array(pre_hosp_list)
+  if (length(dim(pre_arr)) == 2) {
+    pre_arr <- array(pre_arr, dim = c(dim(pre_arr), 1))
+  }
+  
+  # ── Post ───────────────────────────────
+  post_list <- lapply(seq_len(dim(post_arr)[3]), function(i) post_arr[ , , i])
+  post_conv <- make_fatal_hosp_draws(post_list, hosp_rate, fatal_rate, nh_fatal_rate)
+  post_hosp_list <- lapply(post_conv, `[[`, "hosp")
+  post_arr2 <- simplify2array(post_hosp_list)
+  if (length(dim(post_arr2)) == 2) {
+    post_arr2 <- array(post_arr2, dim = c(dim(post_arr2), 1))
+  }
+  
+  # ── Align draws ────────────────────────
+  n_draws <- min(dim(pre_arr)[3], dim(post_arr2)[3])
+  pre_arr   <- pre_arr[ , , 1:n_draws, drop = FALSE]
+  post_arr2 <- post_arr2[ , , 1:n_draws, drop = FALSE]
+  
+  # ── Sum across all ages × weeks ────────
+  total_pre  <- apply(pre_arr,  3, sum, na.rm = TRUE)
+  total_post <- apply(post_arr2, 3, sum, na.rm = TRUE)
+  
+  tibble(
+    draw_id    = seq_len(n_draws),
+    total_pre  = total_pre,
+    total_post = total_post
+  )
+}
+
 scale_symp_by_rho_pre <- function(pre_list, rho_vec) {
   # pre_list: length n_draws, each is (age x week) matrix
   # rho_vec: length n_draws
@@ -249,6 +340,95 @@ all_draws_fatal_true <- purrr::imap_dfr(postsim_vc_ixchiq_model, function(region
 })
 
 # 4. DALY
+make_daly_draws <- function(symp_list, hosp_rate, fatal_rate, nh_fatal_rate,
+                            dw_hosp, dw_nonhosp, dw_chronic,
+                            dur_acute, dur_subacute, dur_chronic,
+                            dw_subacute, subac_prop, chr_prop,
+                            le_left_vec) {
+  lapply(symp_list, function(symp_matrix) {
+    hospitalised       <- sweep(symp_matrix, 1, hosp_rate, `*`)
+    non_hospitalised   <- symp_matrix - hospitalised
+    fatal              <- sweep(hospitalised, 1, fatal_rate, `*`) +
+      sweep(non_hospitalised, 1, nh_fatal_rate, `*`)
+    
+    yld_acute    <- (hospitalised * dw_hosp     * dur_acute) +
+      (non_hospitalised * dw_nonhosp * dur_acute)
+    yld_subacute <- (hospitalised * subac_prop * dw_subacute * dur_subacute) +
+      (non_hospitalised * chr_prop * dw_subacute * dur_subacute)
+    yld_chronic  <- (hospitalised * chr_prop * dw_chronic * dur_chronic) +
+      (non_hospitalised * chr_prop * dw_chronic * dur_chronic)
+    
+    yld_total <- yld_acute + yld_subacute + yld_chronic
+    
+    # precomputed 기대수명 벡터 사용
+    yll <- sweep(fatal, 1, le_left_vec, `*`)
+    
+    daly_tot <- yld_total + yll
+    
+    list(
+      hosp     = hospitalised,
+      fatal    = fatal,
+      yld_tot  = yld_total,
+      yll      = yll,
+      daly_tot = daly_tot
+    )
+  })
+}
+le_by_age <- function(age_numeric) {
+  if (age_numeric <= 1) return(quantile(le_sample$le_1, 0.5))
+  if (age_numeric < 20) return(quantile(le_sample$le_2, 0.5))
+  if (age_numeric < 30) return(quantile(le_sample$le_2, 0.5))
+  if (age_numeric < 40) return(quantile(le_sample$le_3, 0.5))
+  if (age_numeric < 50) return(quantile(le_sample$le_4, 0.5))
+  if (age_numeric < 60) return(quantile(le_sample$le_5, 0.5))
+  if (age_numeric < 70) return(quantile(le_sample$le_6, 0.5))
+  if (age_numeric < 80) return(quantile(le_sample$le_7, 0.5))
+  return(quantile(le_sample$le_8, 0.5))
+}
+
+calc_total_daly_draws <- function(pre_list, post_arr,
+                                  hosp_rate, fatal_rate, nh_fatal_rate,
+                                  dw_hosp, dw_nonhosp, dw_chronic,
+                                  dur_acute, dur_subacute, dur_chronic,
+                                  dw_subacute, subac_prop, chr_prop,
+                                  le_left_vec) {
+  # Pre
+  pre_conv <- make_daly_draws(pre_list, hosp_rate, fatal_rate, nh_fatal_rate,
+                              dw_hosp, dw_nonhosp, dw_chronic,
+                              dur_acute, dur_subacute, dur_chronic,
+                              dw_subacute, subac_prop, chr_prop,
+                              le_left_vec)
+  pre_daly_list <- lapply(pre_conv, `[[`, "daly_tot")
+  pre_arr <- simplify2array(pre_daly_list)
+  if (length(dim(pre_arr)) == 2) {
+    pre_arr <- array(pre_arr, dim = c(dim(pre_arr), 1))
+  }
+  
+  # Post
+  post_list <- lapply(seq(dim(post_arr)[3]), function(i) post_arr[ , , i])
+  post_conv <- make_daly_draws(post_list, hosp_rate, fatal_rate, nh_fatal_rate,
+                               dw_hosp, dw_nonhosp, dw_chronic,
+                               dur_acute, dur_subacute, dur_chronic,
+                               dw_subacute, subac_prop, chr_prop,
+                               le_left_vec)
+  post_daly_list <- lapply(post_conv, `[[`, "daly_tot")
+  post_arr <- simplify2array(post_daly_list)
+  
+  # Align
+  n_draws <- min(dim(pre_arr)[3], dim(post_arr)[3])
+  pre_arr  <- pre_arr[ , , 1:n_draws]
+  post_arr <- post_arr[ , , 1:n_draws]
+  
+  total_pre  <- apply(pre_arr,  3, sum, na.rm = TRUE)
+  total_post <- apply(post_arr, 3, sum, na.rm = TRUE)
+  
+  tibble(draw_id = 1:n_draws,
+         total_pre = total_pre,
+         total_post = total_post)
+}
+
+le_left_vec <- sapply(age_groups, le_by_age)
+
 scale_symp_by_rho_pre <- function(pre_list, rho_vec) {
   # pre_list: list of (age x week) matrices
   Map(function(mat, r) mat / r, pre_list, rho_vec)
@@ -378,7 +558,7 @@ all_draws_sae_true <- all_draws_hosp_true %>%
     total_pre  = total_pre_hosp  + total_pre_fatal,
     total_post = total_post_hosp + total_post_fatal
   ) %>%
-  select(draw_id, total_pre, total_post, Region, VE, Coverage, Scenario)
+  dplyr::select(draw_id, total_pre, total_post, Region, VE, Coverage, Scenario)
 
 
 # add setting key variable
@@ -455,7 +635,7 @@ make_averted_draws_true <- function(df_true, outcome_name, coverage_keep = "cov5
       outcome  = outcome_name,
       averted  = total_pre - total_post
     ) %>%
-    select(draw_id, Region, VE, Coverage, Scenario, outcome, averted)
+    dplyr::select(draw_id, Region, VE, Coverage, Scenario, outcome, averted)
 }
 
 benefit_draws_true <- bind_rows(

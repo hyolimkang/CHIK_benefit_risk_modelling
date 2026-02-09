@@ -18,12 +18,16 @@ options(scipen = 999)
 
 
 # Data
+load("00_Data/0_2_Processed/chikv_fatal_hosp_rate.RData")
 load("01_Data/sim_results_vc_ixchiq_model.RData")
 load("01_Data/combined_nnv_national_age_ixchiq.RData")
 load("01_Data/combined_nnv_df_region_coverage_model.RData")
 load("01_Data/mortality_chikv.RData")
 load("01_Data/rho_df.RData")
 load("01_Data/pop_by_state.RData")
+load("01_Data/posterior_list.RData")
+load("01_Data/preui_all.RData")
+
 all_risk <- read.csv("01_Data/all_risk_four_age.csv")
 
 # ----------------------------------------------------------

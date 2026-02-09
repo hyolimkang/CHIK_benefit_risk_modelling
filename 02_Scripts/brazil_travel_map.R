@@ -55,12 +55,31 @@ brr_state_days_age <- psa_data_mid %>%
     age_group = factor(age_group, levels = c("1-11","12-17","18-64","65+")) %>% fct_drop()
   )
 
+thr <- 0.8  # Pr(BRR>1) >= 0.8
+
+min_days_state_age <- brr_state_days_age %>%
+  arrange(state, age_group, days) %>%
+  group_by(state, age_group) %>%
+  summarise(
+    min_days = {
+      ok <- as.character(days[pr_gt1 >= thr])
+      if (length(ok) == 0) "Not favourable" else ok[1]
+    },
+    .groups = "drop"
+  ) %>%
+  mutate(
+    min_days_cat = factor(min_days, levels = c(days_levels, "Not favourable")),
+    age_group = factor(age_group, levels = c("1-11","12-17","18-64","65+")) %>% fct_drop()
+  )
+
 states_base <- br_states %>%
   mutate(state_key = norm_state(NAME_1))
 
 states_ar <- states_base %>%
   left_join(ar_state %>% mutate(state_key = norm_state(state)), by="state_key")
 
+states_min <- states_base %>%
+  left_join(min_days_state_age %>% mutate(state_key = norm_state(state)), by="state_key")
 
 states_pr <- states_base %>%
   left_join(brr_state_days_age %>% mutate(state_key = norm_state(state)), by="state_key")
@@ -86,19 +105,6 @@ p_min <- ggplot(states_min %>% filter(!is.na(age_group))) +
   map_theme +
   scale_fill_discrete(na.value = "grey80") +
   theme(legend.position = "bottom")  
-
-fig1 <- (p_ar + p_min) +
-  plot_layout(widths = c(1.1, 4.5), guides = "collect") +
-  plot_annotation(
-    title = paste0(
-      "Minimum recommended travel duration = earliest day where Pr(BRR>1) ≥ ",
-      thr, " (", target_outcome, ")"
-    )
-  )
-
-fig1 <- fig1 & theme(legend.position = "bottom", legend.box = "horizontal")
-
-fig1
 
 p_ar2 <- ggplot(states_ar) +
   geom_sf(aes(fill = AR_bin), colour="white", linewidth=0.15) +
@@ -148,6 +154,18 @@ p_ar2 <- ggplot(states_ar) +
   ) +
   theme(legend.position = "bottom")
 
+fig1 <- (p_ar2 + p_min) + 
+  plot_layout(
+    widths = c(1.5, 5),    
+    guides = "collect"
+  ) + 
+  plot_annotation(
+    title = "Minimum recommended travel duration = earliest day where Pr(BRR>1) ≥ 0.8"
+  )
+
+fig1 <- fig1 & theme(legend.position = "bottom", legend.box = "horizontal")
+
+fig1
 
 fig2 <- (p_ar2 + p_pr2) +
   plot_layout(widths = c(1.1, 4.5), guides = "collect") +
@@ -159,4 +177,5 @@ fig2 <- (p_ar2 + p_pr2) +
 fig2 <- fig2 & theme(legend.position = "bottom", legend.box = "horizontal")
 fig2
 
+ggsave("06_Results/brr_brazil_map_travelday.pdf", plot = fig1, width = 8, height = 6)
 ggsave("06_Results/brr_brazil_map.pdf", plot = fig2, width = 7, height = 6)

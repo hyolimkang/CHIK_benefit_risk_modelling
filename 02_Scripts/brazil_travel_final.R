@@ -888,7 +888,8 @@ p_death_hi <- plot_brr_outcome(br_summarized_hi, bg_grid_optimized_hi,
 p_sae_hi   <- plot_brr_outcome(br_summarized_hi, bg_grid_optimized_hi,
                                "SAE",   "Benefit-Risk Assessment: SAE",   "#1B7F1B")
 
-ggsave("06_Results/brr_travel_daly_mid.pdf", plot = p_daly_mid, width = 10, height = 8)
+ggsave("06_Results/brr_travel_daly_mid.pdf", plot = p_daly_mid, width = 10, height = 8,
+       device = cairo_pdf)
 ggsave("06_Results/brr_travel_death_mid.pdf", plot = p_death_mid, width = 10, height = 8)
 ggsave("06_Results/brr_travel_sae_mid.pdf", plot = p_sae_mid, width = 10, height = 8)
 
@@ -928,7 +929,7 @@ ar_table_wide <- ar_summary_all %>%
   mutate(
     brr_formatted = sprintf("%.2f [%.2f–%.2f]", brr_med, brr_lo, brr_hi)
   ) %>%
-  select(outcome, ar_category, age_group, days, brr_formatted) %>%
+  dplyr::select(outcome, ar_category, age_group, days, brr_formatted) %>%
   pivot_wider(
     names_from = days,
     values_from = brr_formatted

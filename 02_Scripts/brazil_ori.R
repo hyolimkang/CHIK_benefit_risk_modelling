@@ -357,14 +357,11 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
       )
     } +
     
-<<<<<<< HEAD
     # facet by age group
     facet_wrap(~ setting + AgeCat, scales = "free", ncol = 4) +
     #facet_grid(setting ~ AgeCat, scales = "free") +
-=======
-    facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
->>>>>>> 01ce4aff7771b718580fcb6ff64f96a8446eef67
-    
+    #facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
+
     scale_color_manual(
       name = "Outcome",
       values = c("SAE" = "#1B7F1B", "Death" = "#B8860B", "DALY" = "#A23B72")
@@ -375,14 +372,11 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
                  "Disease and infection blocking" = 24)
     ) +
     
-<<<<<<< HEAD
     #scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +
     #scale_x_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0))) +
     coord_cartesian(xlim = c(0, NA), ylim = c(0, NA), expand = FALSE) + 
-=======
     coord_cartesian(xlim = c(0, NA), ylim = c(0, NA), expand = FALSE) +
->>>>>>> 01ce4aff7771b718580fcb6ff64f96a8446eef67
-    
+
     labs(
       title = paste("Benefit–risk Assessment:", target_outcome),
       x = "Vaccine related excess outcome (per 10,000 vaccinated individuals)",

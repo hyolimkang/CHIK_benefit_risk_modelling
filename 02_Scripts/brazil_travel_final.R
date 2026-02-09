@@ -26,6 +26,51 @@ foi_daily_by_state <- lapply(foi_daily_by_state, weekly_to_daily_foi)
 
 
 ### psa loop
+<<<<<<< Updated upstream:02_Scripts/brazil_travel_final.R
+=======
+# ---------- helpers (once, before the PSA loop) ----------
+weekly_to_daily_foi <- function(phi_weekly) {
+  phi_weekly <- as.numeric(phi_weekly)
+  rep(phi_weekly / 7, each = 7)  # 52*7 = 364 days
+}
+
+# foi_daily_by_state: named list, each element is daily FOI vector for a state
+# assumes you already created phi_df (state, VE, cov, rep, week, phi)
+
+phi_state_weekly <- phi_df %>%
+  filter(VE == "VE98.9", cov == "cov50") %>%
+  group_by(state, week) %>%
+  summarise(phi = median(phi, na.rm = TRUE), .groups = "drop") %>%
+  arrange(state, week)
+
+foi_daily_by_state <- split(phi_state_weekly$phi, phi_state_weekly$state)
+foi_daily_by_state <- lapply(foi_daily_by_state, weekly_to_daily_foi)
+
+states_to_run <- names(foi_daily_by_state)
+
+rho_med <- setNames(rho_df$rho_p50, rho_df$region)
+rho_lo  <- setNames(rho_df$rho_p2.5,rho_df$region)
+rho_hi  <- setNames(rho_df$rho_p97.5, rho_df$region)
+
+adjust_foi_using_rho_via_ar <- function(foi_daily, rho) {
+  H <- sum(foi_daily, na.rm = TRUE)
+  AR_model <- 1 - exp(-H)
+  AR_star  <- AR_model / rho
+  H_star   <- -log(1 - AR_star)
+  m <- H_star / H
+  foi_daily * m
+}
+
+# make adjusted FOI list (same names as foi_daily_by_state)
+foi_daily_adj_by_state <- lapply(names(foi_daily_by_state), function(st) {
+  foi0 <- foi_daily_by_state[[st]]
+  rho  <- rho_med[[st]]
+  adjust_foi_using_rho_via_ar(foi0, rho)
+})
+names(foi_daily_adj_by_state) <- names(foi_daily_by_state)
+
+
+>>>>>>> Stashed changes:02_Scripts/brazil_travel.R
 # ---------- PSA loop ----------
 psa_out_list <- list()
 n_entry_samples <- 50  # Number of entry day samples to average timing uncertainty

@@ -858,7 +858,7 @@ brr_table_long_setting <- brr_draw_summary_setting %>%
     brr_formatted = sprintf("%.2f [%.2f–%.2f]", brr_med, brr_lo, brr_hi),
     VE_col = as.character(VE_label)
   ) %>%
-  select(outcome, scenario, setting, age_group, VE_col, brr_formatted)
+  dplyr::select(outcome, scenario, setting, age_group, VE_col, brr_formatted)
 
 brr_table_wide_setting <- brr_table_long_setting %>%
   mutate(
@@ -866,7 +866,7 @@ brr_table_wide_setting <- brr_table_long_setting %>%
   ) %>%
   pivot_wider(names_from = VE_col, values_from = brr_formatted) %>%
   arrange(outcome, scenario, setting, age_group) %>%
-  select(-scenario) %>%
+  dplyr::select(-scenario) %>%
   dplyr::rename(`Outcome` = outcome, `Age group` = age_group, `Setting` = setting)
 
 idx_outcome_true <- table(brr_table_wide_setting$`Outcome`)

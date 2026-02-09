@@ -22,6 +22,7 @@ rho_pool <- purrr::imap_dfr(posterior_list, function(post, region_name){
   )
 })
 
+save(posterior_list, file = "01_Data/posterior_list.RData")
 
 preui_all <- list(
   preui_ce,
@@ -378,14 +379,327 @@ all_draws_sae_true <- all_draws_hosp_true %>%
 
 
 # add setting key variable
-all_draws_ix_true <- all_draws_ix_true %>%
-  mutate(setting = unname(setting_key[Region]))
+# ============================================================
+# BRR pipeline (NO object mixing) — draw-level benefit vs risk
+# Everything is created as *_true and never overwritten.
+# ============================================================
 
-all_draws_hosp_true <- all_draws_hosp_true %>%
-  mutate(setting = unname(setting_key[Region]))
+# -------------------------------
+# 0) Safety: clean conflicting objects (optional)
+# -------------------------------
+# rm(list = ls(pattern = "^(benefit_draws|risk_draws|joint|draw_level_xy|summary_long|summary_df|brr_)"))
+# rm(list = ls(pattern = "^(tot_vacc_map|tot_vacc_map2)$"))
 
-all_draws_fatal_true <- all_draws_fatal_true %>%
-  mutate(setting = unname(setting_key[Region]))
+# -------------------------------
+# 1) Helper: scenario -> AgeCat mapping (integer scenarios)
+# -------------------------------
+map_scenario_agecat_int <- function(scen_int) {
+  dplyr::case_when(
+    scen_int == 1L ~ "1-11",
+    scen_int == 2L ~ "12-17",
+    scen_int == 3L ~ "18-64",
+    scen_int == 4L ~ "65+",
+    TRUE ~ NA_character_
+  )
+}
 
-all_draws_daly_true <- all_draws_daly_true %>%
+# -------------------------------
+# 2) Build tot_vacc_map_true from national vaccine data (cov50 only)
+#    Output keys: scenario(int), VE, AgeCat, tot_vacc_grp
+# -------------------------------
+tot_vacc_map_true <- combined_nnv_df_region_coverage_model %>%
+  filter(VC == "cov50") %>%
+  mutate(
+    AgeCat = case_when(
+      AgeGroup %in% 2:4   ~ "1-11",
+      AgeGroup == 5       ~ "12-17",
+      AgeGroup %in% 6:15  ~ "18-64",
+      AgeGroup %in% 16:20 ~ "65+",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(AgeCat)) %>%
+  group_by(scenario, region, AgeCat, VE) %>%
+  summarise(tot_vacc_grp = sum(tot_vacc, na.rm = TRUE), .groups = "drop") %>%
+  # keep only the targeted AgeCat for each scenario
+  mutate(
+    target = case_when(
+      scenario == "Scenario_1" & AgeCat == "1-11"  ~ 1L,
+      scenario == "Scenario_2" & AgeCat == "12-17" ~ 1L,
+      scenario == "Scenario_3" & AgeCat == "18-64" ~ 1L,
+      scenario == "Scenario_4" & AgeCat == "65+"   ~ 1L,
+      TRUE ~ 0L
+    )
+  ) %>%
+  filter(target == 1L) %>%
+  transmute(
+    scenario = as.integer(gsub("Scenario_", "", scenario)),
+    AgeCat, VE, tot_vacc_grp, region
+  )%>%
+  dplyr::rename(Region   = region,
+                Scenario = scenario)
+
+# -------------------------------
+# 3) Build benefit_draws_true from *_true outcomes (cov50 only)
+#    Input expected: all_draws_daly_true, all_draws_hosp_true, all_draws_fatal_true
+#    Each must contain: draw_id, Region, VE, Coverage, Scenario, setting, total_pre, total_post
+# -------------------------------
+make_averted_draws_true <- function(df_true, outcome_name, coverage_keep = "cov50") {
+  df_true %>%
+    filter(Coverage == coverage_keep) %>%
+    mutate(
+      Scenario = as.integer(Scenario),
+      outcome  = outcome_name,
+      averted  = total_pre - total_post
+    ) %>%
+    select(draw_id, Region, VE, Coverage, Scenario, outcome, averted)
+}
+
+benefit_draws_true <- bind_rows(
+  make_averted_draws_true(all_draws_daly_true,  "DALY"),
+  make_averted_draws_true(all_draws_sae_true,   "SAE"),
+  make_averted_draws_true(all_draws_fatal_true, "Death")
+)
+
+# -------------------------------
+# 4) Risk draws (independent): one table with everything we need
+#    Input expected: lhs_sample (your LHS draws)
+# -------------------------------
+risk_draws_true <- lhs_sample %>%
+  mutate(risk_id = row_number()) %>%
+  transmute(
+    risk_id,
+    
+    # SAE / Death probabilities
+    p_sae_u65   = p_sae_vacc_u65,
+    p_sae_65    = p_sae_vacc_65,
+    p_death_u65 = p_death_vacc_u65,
+    p_death_65  = p_death_vacc_65,
+    
+    # DALY parameters used by compute_daly_one()
+    le_lost_1_11, le_lost_12_17, le_lost_18_64, le_lost_65,
+    dw_hosp, dw_nonhosp, dw_subac, dw_chronic,
+    dur_acute, dur_nonhosp, dur_subac, dur_6m, dur_12m, dur_30m,
+    acute, subac, chr6m, chr12m, chr30m
+  )
+
+# -------------------------------
+# 5) Attach independent risk to each benefit row (bootstrap-style)
+#    IMPORTANT: set seed ONCE here for reproducibility
+# -------------------------------
+set.seed(1)
+risk_idx_true <- sample(risk_draws_true$risk_id, size = nrow(benefit_draws_true), replace = TRUE)
+
+joint_true <- benefit_draws_true %>%
+  mutate(risk_id = risk_idx_true) %>%
+  left_join(risk_draws_true, by = "risk_id")
+
+# -------------------------------
+# 6) Build draw_level_xy_true (single pass, no repeats)
+#    - derive AgeCat from Scenario
+#    - join tot_vacc
+#    - compute y_10k and x_10k for SAE/Death
+#    - compute x_10k for DALY via compute_daly_one()
+# -------------------------------
+draw_level_xy_true <- joint_true %>%
+  mutate(
+    Scenario = as.integer(Scenario),
+    AgeCat   = map_scenario_agecat_int(Scenario)
+  ) %>%
+  left_join(
+    tot_vacc_map_true,
+    by = c("Region", "Scenario", "VE", "AgeCat")
+  ) %>%
+  # hard checks: join must succeed
+  { 
+    if (any(is.na(.$tot_vacc_grp))) {
+      bad <- . %>% filter(is.na(tot_vacc_grp)) %>% distinct(Scenario, AgeCat, VE) %>% head(20)
+      stop("tot_vacc_map_true join failed for some keys. Examples:\n", paste(capture.output(print(bad)), collapse="\n"))
+    }
+    .
+  } %>%
+  mutate(
+    # benefit per 10k vaccinated
+    y_10k = (averted / tot_vacc_grp) * 1e4,
+    
+    # choose probabilities by AgeCat
+    p_sae   = if_else(AgeCat == "65+", p_sae_65,   p_sae_u65),
+    p_death = if_else(AgeCat == "65+", p_death_65, p_death_u65),
+    
+    # compute input units for compute_daly_one(): per 10k
+    sae_10k        = p_sae   * 1e4,
+    deaths_sae_10k = p_death * 1e4
+  ) %>%
+  rowwise() %>%
+  mutate(
+    # DALY risk per 10k vaccinated, from SAE & vaccine-death per 10k
+    x_daly_10k = if (outcome == "DALY") {
+      compute_daly_one(
+        age_group      = AgeCat,
+        sae_10k        = sae_10k,
+        deaths_sae_10k = deaths_sae_10k,
+        draw_pars = as.list(list(
+          le_lost_1_11 = le_lost_1_11, le_lost_12_17 = le_lost_12_17,
+          le_lost_18_64 = le_lost_18_64, le_lost_65 = le_lost_65,
+          dw_hosp = dw_hosp, dw_nonhosp = dw_nonhosp, dw_subac = dw_subac, dw_chronic = dw_chronic,
+          dur_acute = dur_acute, dur_nonhosp = dur_nonhosp, dur_subac = dur_subac,
+          dur_6m = dur_6m, dur_12m = dur_12m, dur_30m = dur_30m,
+          acute = acute, subac = subac, chr6m = chr6m, chr12m = chr12m, chr30m = chr30m
+        ))
+      )$daly_sae
+    } else NA_real_,
+    
+    # x-axis (excess adverse outcomes) per 10k vaccinated
+    x_10k = case_when(
+      outcome == "SAE"   ~ sae_10k,
+      outcome == "Death" ~ deaths_sae_10k,
+      outcome == "DALY"  ~ x_daly_10k,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  ungroup()
+
+# -------------------------------
+# 7) VE label (plot-friendly)
+# -------------------------------
+draw_level_xy_true <- draw_level_xy_true %>%
+  mutate(
+    VE_label = factor(VE,
+                      levels = c("VE0", "VE98.9"),
+                      labels = c("Disease blocking only", "Disease and infection blocking")
+    )
+  )%>%
   mutate(setting = unname(setting_key[Region]))
+# -------------------------------
+# 8) Summary for plotting (x/y quantiles)
+#    Output matches your create_br_plot() expectation:
+#    columns: outcome, Scenario, AgeCat, VE_label, x_lo/x_med/x_hi, y_lo/y_med/y_hi
+# -------------------------------
+summary_long_true <- draw_level_xy_true %>%
+  group_by(outcome, Scenario, AgeCat, VE_label) %>%
+  summarise(
+    x_lo  = quantile(x_10k, 0.025, na.rm = TRUE),
+    x_med = quantile(x_10k, 0.50,  na.rm = TRUE),
+    x_hi  = quantile(x_10k, 0.975, na.rm = TRUE),
+    y_lo  = quantile(y_10k, 0.025, na.rm = TRUE),
+    y_med = quantile(y_10k, 0.50,  na.rm = TRUE),
+    y_hi  = quantile(y_10k, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# -------------------------------
+# 9) BRR summary + table (med + 95% UI)
+# -------------------------------
+brr_draw_summary_true <- draw_level_xy_true %>%
+  mutate(brr = y_10k / pmax(x_10k, 1e-12)) %>%
+  group_by(outcome, Scenario, AgeCat, VE_label) %>%
+  summarise(
+    brr_med = quantile(brr, 0.50,  na.rm = TRUE),
+    brr_lo  = quantile(brr, 0.025, na.rm = TRUE),
+    brr_hi  = quantile(brr, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    scenario  = Scenario,
+    age_group = AgeCat
+  )
+
+brr_table_long_true <- brr_draw_summary_true %>%
+  mutate(
+    brr_formatted = sprintf("%.2f [%.2f–%.2f]", brr_med, brr_lo, brr_hi),
+    VE_col = as.character(VE_label)
+  ) %>%
+  select(outcome, scenario, age_group, VE_col, brr_formatted)
+
+brr_table_wide_true <- brr_table_long_true %>%
+  pivot_wider(names_from = VE_col, values_from = brr_formatted) %>%
+  arrange(outcome, scenario, age_group) %>%
+  select(-scenario) %>%
+  dplyr::rename(`Outcome` = outcome, `Age group` = age_group)
+
+idx_outcome_true <- table(brr_table_wide_true$`Outcome`)
+
+kable(
+  brr_table_wide_true,
+  format  = "html",
+  caption = "Benefit–Risk Ratio (BRR) by Outcome, Scenario, Age Group, and VE",
+  align   = "l"
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    font_size  = 12
+  ) %>%
+  pack_rows(index = idx_outcome_true) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)
+
+# -------------------------------
+# 10) by setting
+# -------------------------------
+summary_long_setting <- draw_level_xy_true %>%
+  mutate(
+    setting = factor(setting, levels = c("<1%", "1-10%", "10%+"))
+  )%>%
+  group_by(outcome, Scenario, AgeCat, VE_label, setting) %>%
+  summarise(
+    x_lo  = quantile(x_10k, 0.025, na.rm = TRUE),
+    x_med = quantile(x_10k, 0.50,  na.rm = TRUE),
+    x_hi  = quantile(x_10k, 0.975, na.rm = TRUE),
+    y_lo  = quantile(y_10k, 0.025, na.rm = TRUE),
+    y_med = quantile(y_10k, 0.50,  na.rm = TRUE),
+    y_hi  = quantile(y_10k, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(outcome, Scenario, setting, AgeCat, VE_label)
+
+# -------------------------------
+# 9) BRR summary + table (med + 95% UI)
+# -------------------------------
+brr_draw_summary_setting <- draw_level_xy_true %>%
+  mutate(brr = y_10k / pmax(x_10k, 1e-12)) %>%
+  group_by(outcome, Scenario, AgeCat, VE_label, setting) %>%
+  summarise(
+    brr_med = quantile(brr, 0.50,  na.rm = TRUE),
+    brr_lo  = quantile(brr, 0.025, na.rm = TRUE),
+    brr_hi  = quantile(brr, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    scenario  = Scenario,
+    age_group = AgeCat
+  )
+
+brr_table_long_setting <- brr_draw_summary_setting %>%
+  mutate(
+    brr_formatted = sprintf("%.2f [%.2f–%.2f]", brr_med, brr_lo, brr_hi),
+    VE_col = as.character(VE_label)
+  ) %>%
+  select(outcome, scenario, setting, age_group, VE_col, brr_formatted)
+
+brr_table_wide_setting <- brr_table_long_setting %>%
+  mutate(
+    setting = factor(setting, levels = c("<1%", "1-10%", "10%+"))
+  ) %>%
+  pivot_wider(names_from = VE_col, values_from = brr_formatted) %>%
+  arrange(outcome, scenario, setting, age_group) %>%
+  select(-scenario) %>%
+  dplyr::rename(`Outcome` = outcome, `Age group` = age_group, `Setting` = setting)
+
+idx_outcome_true <- table(brr_table_wide_setting$`Outcome`)
+
+kable(
+  brr_table_wide_setting,
+  format  = "html",
+  caption = "Benefit–Risk Ratio (BRR) by Outcome, Scenario, Age Group, and VE",
+  align   = "l"
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    font_size  = 12
+  ) %>%
+  pack_rows(index = idx_outcome_true) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)
+

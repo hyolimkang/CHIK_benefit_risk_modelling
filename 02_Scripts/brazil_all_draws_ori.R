@@ -38,6 +38,9 @@ preui_all <- list(
   preui_tc
 )
 
+save(preui_all, file = "01_Data/preui_all.RData")
+
+
 names(preui_all) <- c("Ceará","Alagoas", "Bahia", "Goiás",
                       "Minas Gerais", "Paraíba", "Piauí",
                       "Pernambuco", "Rio Grande do Norte", 

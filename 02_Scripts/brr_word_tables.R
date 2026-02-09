@@ -47,3 +47,25 @@ doc <- read_docx() %>%
 print(doc, target = "06_Results/BRR_table_ori.docx")
 
 
+## ori by setting
+### ori
+ft_brr <- flextable(brr_table_wide_setting) %>%
+  theme_booktabs() %>%
+  autofit() %>%
+  bold(part = "header") %>%
+  align(align = "center", part = "all") %>%
+  align(j = 1:2, align = "left", part = "all") %>%
+  merge_v(j = "Outcome") %>%
+  valign(j = "Outcome", valign = "top")
+
+ft_brr
+
+doc <- read_docx() %>%
+  body_add_par(
+    "Benefit–Risk Ratio (BRR) by Outcome, Age group, and VE",
+    style = "heading 2"
+  ) %>%
+  body_add_flextable(ft_brr)
+
+print(doc, target = "06_Results/BRR_table_ori_setting.docx")
+

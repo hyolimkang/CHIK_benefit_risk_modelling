@@ -27,6 +27,7 @@ load("01_Data/rho_df.RData")
 load("01_Data/pop_by_state.RData")
 load("01_Data/posterior_list.RData")
 load("01_Data/preui_all.RData")
+load("01_Data/postsim_vc_ixchiq_model.RData")
 
 all_risk <- read.csv("01_Data/all_risk_four_age.csv")
 

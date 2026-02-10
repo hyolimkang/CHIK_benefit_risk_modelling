@@ -301,6 +301,9 @@ psa_df <- bind_rows(psa_out_list)
 # - Adds column: ar_level (lo/mid/hi)
 # - Reuses the SAME entry_days across lo/mid/hi for fair comparison
 # ------------------------------------------------------------------------------
+n_entry_samples <- 50  # Number of entry day samples to average timing uncertainty
+
+ar_levels_to_run <- "mid"  # c("lo","mid","hi")
 
 psa_out_list <- list()
 
@@ -394,7 +397,7 @@ for (d in seq_len(nrow(lhs_sample))) {
         entry_days <- sample.int(max_entry, size = n_entry_samples, replace = TRUE)
         
         # ---------- loop over AR levels (lo/mid/hi) ----------
-        for (ar_level in c("lo", "mid", "hi")) {
+        for (ar_level in ar_levels_to_run) {
           
           foi_daily <- foi_daily_adj_by_state[[st]][[ar_level]]
           if (is.null(foi_daily)) stop("Missing ", ar_level, " FOI for state: ", st)

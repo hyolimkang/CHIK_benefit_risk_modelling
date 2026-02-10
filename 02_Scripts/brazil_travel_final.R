@@ -303,7 +303,7 @@ psa_df <- bind_rows(psa_out_list)
 # ------------------------------------------------------------------------------
 n_entry_samples <- 50  # Number of entry day samples to average timing uncertainty
 
-ar_levels_to_run <- "mid"  # c("lo","mid","hi")
+ar_levels_to_run <- c("lo","mid","hi")
 
 psa_out_list <- list()
 

@@ -60,8 +60,8 @@ compute_outcome <- function(AR, p_hosp, p_death, p_sae_vacc, p_death_vacc, VE_ho
   averted_10k_death <- risk_nv_death - risk_v_death
   
   # --- Excess (vaccine-related) ---
-  excess_10k_sae   <- vacc_sae_10k
-  excess_10k_death <- vacc_death_10k
+  excess_10k_sae   <- vacc_sae_10k + vacc_death_10k   # SAE = hosp + death
+  excess_10k_death <- vacc_death_10k                  # death-only
   
   # --- BRR ---
   brr_sae   <- ifelse(excess_10k_sae   == 0, NA, averted_10k_sae   / excess_10k_sae)
@@ -535,7 +535,7 @@ lhs_sample <- matrix (nrow = nrow(A), ncol = ncol(A))
 
 # vacc sae and death
 lhs_sample [,1]   <- qbeta(A[,1], shape1 = 6+0.5, shape2 = 32949-6+0.5) # conservative values
-lhs_sample [,2]   <- qbeta(A[,2], shape1 = 20+0.5, shape2 = 18445-20+0.5) # conservative values
+lhs_sample [,2]   <- qbeta(A[,2], shape1 = 19+0.5, shape2 = 18445-19+0.5) # conservative values
 lhs_sample [,3]   <- qbeta(A[,3], shape1 = 0+0.5, shape2 = 32949-0+0.5) # conservative values
 lhs_sample [,4]   <- qbeta(A[,4], shape1 = 1+0.5, shape2 = 18445-1+0.5) # conservative values
 

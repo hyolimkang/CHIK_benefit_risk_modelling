@@ -460,8 +460,8 @@ for (d in seq_len(nrow(lhs_sample))) {
             sae <- compute_daly_one(
               age_group = age,
               deaths_10k = 0, hosp_10k = 0, nonhosp_symp_10k = 0, symp_10k = 0,
-              sae_10k = res$excess_10k_sae,
-              deaths_sae_10k = res$excess_10k_death,
+              sae_10k = 1e4 * p_sae_vacc,
+              deaths_sae_10k = 1e4 * p_death_vacc,
               draw_pars = draw_pars
             )
             
@@ -469,11 +469,14 @@ for (d in seq_len(nrow(lhs_sample))) {
             daly_sae     <- sae$daly_sae
             brr_daly     <- ifelse(daly_sae > 0, daly_averted / daly_sae, NA_real_)
             
+            risk_nv_10k_sae <- res$risk_nv_hosp + res$risk_nv_death
+            risk_v_10k_sae  <- (res$risk_v_hosp + res$risk_v_death) + res$excess_10k_sae
+            
             temp_results[[entry_idx]] <- list(
               AR_travel = AR_travel,
               
-              risk_nv_10k_sae = res$risk_nv_hosp,
-              risk_v_10k_sae  = res$risk_v_hosp + res$excess_10k_sae,
+              risk_nv_10k_sae = risk_nv_10k_sae,
+              risk_v_10k_sae  = risk_v_10k_sae,
               averted_10k_sae = res$averted_10k_sae,
               excess_10k_sae  = res$excess_10k_sae,
               brr_sae         = res$brr_sae,

@@ -358,9 +358,9 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
     } +
     
     # facet by age group
-    facet_wrap(~ setting + AgeCat, scales = "free", ncol = 4) +
+    #facet_wrap(~ setting + AgeCat, scales = "free", ncol = 4) +
     #facet_grid(setting ~ AgeCat, scales = "free") +
-    #facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
+    facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
 
     #facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
     
@@ -401,19 +401,28 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
       panel.spacing = unit(0.35, "lines")
     )
 }
-
+# by setting
 plot_sae   <- create_br_plot(summary_long_setting, "SAE")
 plot_death <- create_br_plot(summary_long_setting, "Death")
 plot_daly  <- create_br_plot(summary_long_setting, "DALY")
+
+# national
+plot_sae   <- create_br_plot(summary_long_true, "SAE")
+plot_death <- create_br_plot(summary_long_true, "Death")
+plot_daly  <- create_br_plot(summary_long_true, "DALY")
 
 plot_daly
 plot_sae
 plot_death
 
 
-ggsave("06_Results/brr_daly_ori.pdf", plot = plot_daly, width = 10, height = 8)
-ggsave("06_Results/brr_death_ori.pdf", plot = plot_death, width = 10, height = 8)
-ggsave("06_Results/brr_sae_ori.pdf", plot = plot_sae, width = 10, height = 8)
+ggsave("06_Results/brr_daly_ori_setting.pdf", plot = plot_daly, width = 10, height = 8)
+ggsave("06_Results/brr_death_ori_setting.pdf", plot = plot_death, width = 10, height = 8)
+ggsave("06_Results/brr_sae_ori_setting.pdf", plot = plot_sae, width = 10, height = 8)
+
+ggsave("06_Results/brr_daly_ori_nat.pdf", plot = plot_daly, width = 10, height = 8)
+ggsave("06_Results/brr_death_ori_nat.pdf", plot = plot_death, width = 10, height = 8)
+ggsave("06_Results/brr_sae_ori_nat.pdf", plot = plot_sae, width = 10, height = 8)
 
 ################################################################################
 # table 

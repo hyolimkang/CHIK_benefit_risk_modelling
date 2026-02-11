@@ -434,45 +434,48 @@ compute_daly_one <- function(age_group,
 ## br space traveller function
 plot_brr_outcome <- function(br_summarized, bg_grid_optimized, 
                              target_outcome, title_text, color_val,
-                             show_prop = TRUE) {
+                             show_prop = TRUE,
+                             eps_x = 1e-9,          # Avoid x==0 in background grid (prevents undefined BRR/log)
+                             keep_zero_axis = TRUE  # Force axes to start at 0 (prevents "looks negative")
+) {
   
   plot_data <- br_summarized %>% 
-    filter(.data$outcome == target_outcome)
+    dplyr::filter(.data$outcome == target_outcome)
   
   plot_bg <- bg_grid_optimized %>% 
-    filter(.data$outcome == target_outcome)
+    dplyr::filter(.data$outcome == target_outcome) %>%
+    # Remove x==0 line only for the background raster to avoid undefined BRR/log at the boundary
+    dplyr::filter(.data$x > eps_x)
   
   panel_prop <- plot_bg %>%
-    mutate(is_fav = !is.na(log10_brr) & log10_brr > 0) %>%
-    group_by(ar_category, days) %>%
-    summarise(prop_fav = mean(is_fav), .groups = "drop") %>%
-    mutate(label = ifelse(prop_fav < 0.005, "BRR>1: <1%",
-                          sprintf("BRR>1: %.0f%%", 100 * prop_fav)))
+    dplyr::mutate(is_fav = !is.na(log10_brr) & is.finite(log10_brr) & log10_brr > 0) %>%
+    dplyr::group_by(ar_category, days) %>%
+    dplyr::summarise(prop_fav = mean(is_fav), .groups = "drop") %>%
+    dplyr::mutate(label = ifelse(prop_fav < 0.005, "BRR>1: <1%",
+                                 sprintf("BRR>1: %.0f%%", 100 * prop_fav)))
   
   panel_ranges <- plot_bg %>%
-    group_by(ar_category, days) %>%
-    summarise(
+    dplyr::group_by(ar_category, days) %>%
+    dplyr::summarise(
       x_min = min(x, na.rm = TRUE),
       x_max = max(x, na.rm = TRUE),
       y_min = min(y, na.rm = TRUE),
       y_max = max(y, na.rm = TRUE),
       .groups = "drop"
     ) %>%
-    mutate(
-      x_lab = x_min + 0.02 * (x_max - x_min),   
-      y_lab = y_max - 0.04 * (y_max - y_min)    
+    dplyr::mutate(
+      x_lab = x_min + 0.02 * (x_max - x_min),
+      y_lab = y_max - 0.04 * (y_max - y_min)
     )
   
   panel_prop <- panel_prop %>%
-    left_join(panel_ranges, by = c("ar_category", "days"))
+    dplyr::left_join(panel_ranges, by = c("ar_category", "days"))
   
-  pd <- position_dodge(width = 0.6)
-  
-  ggplot() +
+  p <- ggplot() +
     geom_raster(
       data = plot_bg,
       aes(x = x, y = y, fill = log10_brr),
-      interpolate = TRUE,
+      interpolate = FALSE,  # Turn off interpolation to reduce boundary artefacts near x≈0
       alpha = 0.85
     ) +
     scale_fill_gradient2(
@@ -482,16 +485,29 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
       breaks = log_range, labels = brr_labels,
       oob = scales::squish, na.value = "white"
     ) +
-    
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", alpha = 0.4, linewidth = 0.9, colour = "grey35") +
-    
-    geom_errorbar(data = plot_data, aes(x = x_med, ymin = y_lo, ymax = y_hi), 
-                  color = color_val, width = 0, linewidth = 0.6, position = pd) +
-    geom_errorbarh(data = plot_data, aes(y = y_med, xmin = x_lo, xmax = x_hi), 
-                   color = color_val, height = 0, linewidth = 0.6, position = pd) +
-    geom_point(data = plot_data, aes(x = x_med, y = y_med, shape = AgeCat), 
-               fill = "white", color = color_val, size = 3, stroke = 1, position = pd) +
-    
+    geom_abline(
+      slope = 1, intercept = 0,
+      linetype = "dashed", alpha = 0.4, linewidth = 0.9, colour = "grey35"
+    ) +
+    # Use identity positioning (no dodging) to avoid shifting points below/left of 0
+    geom_errorbar(
+      data = plot_data,
+      aes(x = x_med, ymin = y_lo, ymax = y_hi),
+      color = color_val, width = 0, linewidth = 0.6,
+      position = "identity"
+    ) +
+    geom_errorbarh(
+      data = plot_data,
+      aes(y = y_med, xmin = x_lo, xmax = x_hi),
+      color = color_val, height = 0, linewidth = 0.6,
+      position = "identity"
+    ) +
+    geom_point(
+      data = plot_data,
+      aes(x = x_med, y = y_med, shape = AgeCat),
+      fill = "white", color = color_val, size = 3, stroke = 1,
+      position = "identity"
+    ) +
     {if (show_prop)
       geom_label(
         data = panel_prop,
@@ -503,22 +519,30 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
         fill = "white", alpha = 0.75,
         colour = "black"
       )
-    } + 
+    } +
     facet_wrap(~ ar_category + days, scales = "free", ncol = 4) +
-    #facet_grid(ar_category ~ days, scales="free") + 
-    
-    scale_shape_manual(values = c("1-11"=21, "12-17"=22, "18-64"=23, "65+"=24), name = "Age group") +
+    scale_shape_manual(values = c("1-11"=21, "12-17"=22, "18-64"=23, "65+"=24),
+                       name = "Age group") +
     scale_x_continuous(expand = c(0, 0)) +
     scale_y_continuous(expand = c(0, 0)) +
-    
-    labs(title = title_text, x = "Vaccine related excess outcome (per 10,000 vaccinated individuals)", y = "Outcomes averted by vaccination (per 10,000 vaccinated individuals)") +
+    labs(
+      title = title_text,
+      x = "Vaccine related excess outcome (per 10,000 vaccinated individuals)",
+      y = "Outcomes averted by vaccination (per 10,000 vaccinated individuals)"
+    ) +
     theme_bw() +
     theme(
       panel.grid = element_blank(),
       strip.background = element_rect(fill = "gray95"),
       legend.position = "right",
-      panel.spacing = unit(0.35, "lines")
+      panel.spacing = grid::unit(0.35, "lines")
     )
+  
+  if (keep_zero_axis) {
+    p <- p + coord_cartesian(xlim = c(0, NA), ylim = c(0, NA), expand = FALSE)
+  }
+  
+  return(p)
 }
 
 
@@ -541,16 +565,16 @@ lhs_sample [,3]   <- qbeta(A[,3], shape1 = 0+0.5, shape2 = 32949-0+0.5) # conser
 lhs_sample [,4]   <- qbeta(A[,4], shape1 = 1+0.5, shape2 = 18445-1+0.5) # conservative values
 
 # natural hospitalisation (case + 1 / n - case + 1)
-lhs_sample [,5]   <- qbeta(A[,5], shape1 = 3703+1, shape2 = 92763-3703+1)
-lhs_sample [,6]   <- qbeta(A[,6], shape1 = 1568+1, shape2 = 50598-1568+1)
-lhs_sample [,7]   <- qbeta(A[,7], shape1 = 11344+1, shape2 = 396351-11344+1)
-lhs_sample [,8]   <- qbeta(A[,8], shape1 = 3690+1, shape2 = 303588-3690+1)
+lhs_sample [,5]   <- qbeta(A[,5], shape1 = 3703+1, shape2 = 67683-3703+1)
+lhs_sample [,6]   <- qbeta(A[,6], shape1 = 1568+1, shape2 = 61390-1568+1)
+lhs_sample [,7]   <- qbeta(A[,7], shape1 = 11344+1, shape2 = 696504-11344+1)
+lhs_sample [,8]   <- qbeta(A[,8], shape1 = 3690+1, shape2 = 113736-3690+1)
 
 # natural death
-lhs_sample [,9]   <- qbeta(A[,9], shape1 = 32+1, shape2 = 92763-32+1)
-lhs_sample [,10]   <- qbeta(A[,10], shape1 = 22+1, shape2 = 50598-22+1)
-lhs_sample [,11]   <- qbeta(A[,11], shape1 = 312+1, shape2 = 396351-312+1)
-lhs_sample [,12]   <- qbeta(A[,12], shape1 = 534+1, shape2 = 303588-534+1)
+lhs_sample [,9]   <- qbeta(A[,9], shape1 = 32+1, shape2 = 67683-32+1)
+lhs_sample [,10]   <- qbeta(A[,10], shape1 = 22+1, shape2 = 61390-22+1)
+lhs_sample [,11]   <- qbeta(A[,11], shape1 = 312+1, shape2 = 696504-312+1)
+lhs_sample [,12]   <- qbeta(A[,12], shape1 = 534+1, shape2 = 113736-534+1)
 
 # ve, ar, travel duration 
 lhs_sample [,13]   <- qtruncnorm(A[,13], a = 0.967, b = 0.998, mean = 0.989, sd   = (0.998 - 0.967) / (2 * qnorm(0.975)))

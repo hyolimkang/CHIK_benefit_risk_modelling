@@ -1,4 +1,5 @@
 ### traveller 
+conflicted::conflict_prefer("align", "flextable")
 
 ft <- flextable(ar_table_wide) %>%
   set_header_labels(

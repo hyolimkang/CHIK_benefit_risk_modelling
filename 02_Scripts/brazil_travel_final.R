@@ -623,12 +623,12 @@ br_representative_benefit_mid <- br_representative_benefit_mid %>%
   mutate(
     age_group = ifelse(age_group == "65", "65+", age_group),
     ar_category = case_when(
-      AR_total_pct < 1                    ~ "<1%",
-      AR_total_pct >= 1  & AR_total_pct < 10 ~ "1–10%",
+      AR_total_pct < 5                    ~ "<5%",
+      AR_total_pct >= 5  & AR_total_pct < 10 ~ "5–10%",
       AR_total_pct >= 10   ~ "10%+",
       TRUE                                ~ NA_character_
     ),
-    ar_category = factor(ar_category, levels = c("<1%", "1–10%", "10%+"))
+    ar_category = factor(ar_category, levels = c("<5%", "5–10%", "10%+"))
   ) %>%
   filter(!is.na(ar_category)) %>%
   dplyr::rename(AgeCat = age_group) 
@@ -732,12 +732,12 @@ ar_summary_all <- psa_data_mid %>%
     days = factor(days, levels = c("7d", "14d", "30d", "90d")),
     age_group = ifelse(age_group == "65", "65+", age_group),
     ar_category = case_when(
-      AR_total_pct < 1                       ~ "<1%",
-      AR_total_pct >= 1  & AR_total_pct < 10 ~ "1–10%",
+      AR_total_pct < 5                       ~ "<5%",
+      AR_total_pct >= 5  & AR_total_pct < 10 ~ "5–10%",
       AR_total_pct >= 10                     ~ "10%+",
       TRUE                                   ~ NA_character_
     ),
-    ar_category = factor(ar_category, levels = c("<1%", "1–10%", "10%+"))
+    ar_category = factor(ar_category, levels = c("<5%", "5–10%", "10%+"))
   ) %>%
   group_by(ar_category, age_group, days, outcome) %>%
   summarise(

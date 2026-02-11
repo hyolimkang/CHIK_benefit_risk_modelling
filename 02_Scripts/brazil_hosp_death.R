@@ -3,22 +3,21 @@ setwd("C:/Users/user/OneDrive - London School of Hygiene and Tropical Medicine/C
 
 ## hosp and death
 # hosp and death 
-hosp  <- readRDS("01_Data/hosp_chikvna.RDS")
-death <- readRDS("01_Data/death_chikvna.RDS")
+hosp_raw  <- readRDS("01_Data/hosp_chikvna.RDS")
+death_raw <- readRDS("01_Data/death_chikvna.RDS")
 
-total_n <- hosp %>% group_by(age_group)%>%
+total_n <- hosp_raw %>% group_by(age_group)%>%
   mutate(total_n = sum(n)) %>% 
   mutate(hosp_rate = n / total_n)
 
-hosp$total_n <- total_n$total_n
+hosp_raw$total_n <- total_n$total_n
 
-death_age <- death %>%
-  # One row per age_group: get deaths (deaht == TRUE) and the denominator (total_n)
+death_age <- death_raw %>%
   group_by(age_group) %>%
   summarise(
-    death_n = sum(n[deaht], na.rm = TRUE), # deaht == TRUE rows
-    denom_n = max(total_n, na.rm = TRUE), # total_n repeated across TRUE/FALSE rows
-    death_rate = death_n / denom_n, # age-specific death rate
+    death_n  = sum(n[deaht], na.rm = TRUE),
+    denom_n  = sum(n, na.rm = TRUE),
+    death_rate = death_n / denom_n,
     .groups = "drop"
   )
 
@@ -32,7 +31,7 @@ death_band <- death_age %>%
       TRUE ~ NA_character_
     )
   ) %>%
-  filter(!is.na(age_band)) %>%
+  dplyr::filter(!is.na(age_band)) %>%
   group_by(age_band) %>%
   summarise(
     death_n = sum(death_n),
@@ -41,7 +40,7 @@ death_band <- death_age %>%
     .groups = "drop"
   )
 
-hosp <- hosp %>%
+hosp_band <- hosp_raw %>%
   # Collapse to one row per age_group (to avoid duplicated total_n)
   group_by(age_group) %>%
   summarise(
@@ -59,7 +58,7 @@ hosp <- hosp %>%
       TRUE ~ NA_character_
     )
   ) %>%
-  filter(!is.na(age_band)) %>%
+  dplyr::filter(!is.na(age_band)) %>%
   group_by(age_band) %>%
   summarise(
     # Weighted/overall hospitalisation rate for the band
@@ -80,7 +79,7 @@ age_labels <- c("<1","1-4","5-9","10-11","12-17","18-19",
                 "80-84","85+")
 
 
-hosp_20 <- hosp %>%
+hosp_20 <- hosp_raw %>%
   mutate(
     age_label = cut(
       age_group, # 
@@ -90,7 +89,7 @@ hosp_20 <- hosp %>%
       include.lowest = TRUE
     )
   ) %>%
-  filter(!is.na(age_label)) %>%
+  dplyr::filter(!is.na(age_label)) %>%
   group_by(age_label) %>%
   summarise(
     hosp_n = sum(n[hosp == TRUE], na.rm = TRUE),
@@ -100,7 +99,7 @@ hosp_20 <- hosp %>%
     .groups = "drop"
   )
 
-death_20 <- death %>%
+death_20 <- death_raw %>%
   mutate(
     age_label = cut(
       age_group, # 
@@ -110,7 +109,7 @@ death_20 <- death %>%
       include.lowest = TRUE
     )
   ) %>%
-  filter(!is.na(age_label)) %>%
+  dplyr::filter(!is.na(age_label)) %>%
   group_by(age_label) %>%
   summarise(
     death_n = sum(n[deaht == TRUE], na.rm = TRUE),

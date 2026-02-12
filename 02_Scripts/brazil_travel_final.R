@@ -554,6 +554,8 @@ psa_df <- dplyr::bind_rows(psa_out_list)
 
 
 save(psa_df, file = "01_Data/psa_df_bra_travel_allAR.RData")
+save(psa_df, file = "01_Data/psa_df_bra_travel_mid.RData")
+
 
 ar_summary_all <- psa_df %>%
   pivot_longer(

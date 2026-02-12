@@ -1,5 +1,3 @@
-## load simulation data for all 11 states in brazil ----------------------------
-load("01_Data/sim_results_vc_ixchiq_model.RData")
 
 # extract weekly FOI for each state
 phi_df <- extract_phi_long(sim_results_vc_ixchiq_model)
@@ -303,7 +301,7 @@ psa_df <- bind_rows(psa_out_list)
 # ------------------------------------------------------------------------------
 n_entry_samples <- 50  # Number of entry day samples to average timing uncertainty
 
-ar_levels_to_run <- c("lo","mid","hi")
+ar_levels_to_run <- "mid" #c("lo","mid","hi")
 
 psa_out_list <- list()
 
@@ -556,6 +554,8 @@ psa_df <- dplyr::bind_rows(psa_out_list)
 
 
 save(psa_df, file = "01_Data/psa_df_bra_travel_allAR.RData")
+save(psa_df, file = "01_Data/psa_df_bra_travel_mid.RData")
+
 
 ar_summary_all <- psa_df %>%
   pivot_longer(

@@ -50,17 +50,27 @@ print(doc, target = "06_Results/BRR_table_ori.docx")
 
 ## ori by setting
 ### ori
-ft_brr <- flextable(brr_table_wide_setting) %>%
+brr_table_wide_setting2 <- brr_table_wide_setting %>%
+  arrange(Outcome, Setting, `Age group`)
+
+ft_brr <- flextable(brr_table_wide_setting2) %>%
+  set_header_labels(
+    Outcome = "Outcome",
+    Setting = "Setting",
+    `Age group` = "Age Group",
+    `Disease blocking only` = "Disease blocking only",
+    `Disease and infection blocking` = "Disease and infection blocking"
+  ) %>%
   theme_booktabs() %>%
   autofit() %>%
   bold(part = "header") %>%
   align(align = "center", part = "all") %>%
-  align(j = 1:2, align = "left", part = "all") %>%
-  merge_v(j = "Outcome") %>%
-  valign(j = "Outcome", valign = "top")
+  align(j = 1:3, align = "left", part = "all") %>%
+  merge_v(j = c("Outcome", "Setting")) %>%          
+  valign(j = c("Outcome", "Setting"), valign = "top") %>%
+  border_remove()
 
 ft_brr
-
 doc <- read_docx() %>%
   body_add_par(
     "Benefit–Risk Ratio (BRR) by Outcome, Age group, and VE",

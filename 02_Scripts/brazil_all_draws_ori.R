@@ -1,3 +1,4 @@
+conflicted::conflicts_prefer(dplyr::filter)
 # make all draws for symptomatic cases
 # draw base impact
 posterior_list <- list(
@@ -47,16 +48,16 @@ names(preui_all) <- c("Ceará","Alagoas", "Bahia", "Goiás",
                       "Sergipe", "Tocantins")
 setting_key <- c(
   "Ceará"             = "10%+",
-  "Bahia"             = "<1%",
-  "Paraíba"           = "1-10%",
-  "Pernambuco"        = "1-10%",
-  "Rio Grande do Norte" = "1-10%",
+  "Bahia"             = "<5%",
+  "Paraíba"           = "5-10%",
+  "Pernambuco"        = "5-10%",
+  "Rio Grande do Norte" = "5-10%",
   "Piauí"             = "10%+",
-  "Tocantins"         = "1-10%",
+  "Tocantins"         = "5-10%",
   "Alagoas"           = "10%+",
-  "Minas Gerais"      = "<1%",
-  "Sergipe"           = "1-10%",
-  "Goiás"             = "<1%"
+  "Minas Gerais"      = "<5%",
+  "Sergipe"           = "5-10%",
+  "Goiás"             = "<5%"
 )
 
 ### before scaling
@@ -601,7 +602,7 @@ tot_vacc_map_true <- combined_nnv_df_region_coverage_model %>%
       TRUE ~ NA_character_
     )
   ) %>%
-  filter(!is.na(AgeCat)) %>%
+  dplyr::filter(!is.na(AgeCat)) %>%
   group_by(scenario, region, AgeCat, VE) %>%
   summarise(tot_vacc_grp = sum(tot_vacc, na.rm = TRUE), .groups = "drop") %>%
   # keep only the targeted AgeCat for each scenario
@@ -614,7 +615,7 @@ tot_vacc_map_true <- combined_nnv_df_region_coverage_model %>%
       TRUE ~ 0L
     )
   ) %>%
-  filter(target == 1L) %>%
+  dplyr::filter(target == 1L) %>%
   transmute(
     scenario = as.integer(gsub("Scenario_", "", scenario)),
     AgeCat, VE, tot_vacc_grp, region
@@ -822,7 +823,7 @@ kable(
 # -------------------------------
 summary_long_setting <- draw_level_xy_true %>%
   mutate(
-    setting = factor(setting, levels = c("<1%", "1-10%", "10%+"))
+    setting = factor(setting, levels = c("<5%", "5-10%", "10%+"))
   )%>%
   group_by(outcome, Scenario, AgeCat, VE_label, setting) %>%
   summarise(
@@ -862,7 +863,7 @@ brr_table_long_setting <- brr_draw_summary_setting %>%
 
 brr_table_wide_setting <- brr_table_long_setting %>%
   mutate(
-    setting = factor(setting, levels = c("<1%", "1-10%", "10%+"))
+    setting = factor(setting, levels = c("<5%", "5-10%", "10%+"))
   ) %>%
   pivot_wider(names_from = VE_col, values_from = brr_formatted) %>%
   arrange(outcome, scenario, setting, age_group) %>%

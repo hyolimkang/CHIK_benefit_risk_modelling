@@ -4,7 +4,7 @@ conflicted::conflict_prefer("align", "flextable")
 ft <- flextable(ar_table_wide) %>%
   set_header_labels(
     outcome     = "Outcome",
-    ar_category = "Attack Rate",
+    ar_category = "Setting",
     age_group   = "Age Group",
     `7d`  = "7 days",
     `14d` = "14 days",
@@ -16,8 +16,8 @@ ft <- flextable(ar_table_wide) %>%
   align(align = "center", part = "all") %>%
   align(j = 1:3, align = "left", part = "all") %>%
   bold(part = "header") %>%
-  merge_v(j = c("outcome", "ar_category")) %>%
-  valign(j = c("outcome", "ar_category"), valign = "top") %>%
+  merge_v(j = c("outcome", "setting")) %>%
+  valign(j = c("outcome", "setting"), valign = "top") %>%
   border_remove()
 
 doc <- read_docx() %>%

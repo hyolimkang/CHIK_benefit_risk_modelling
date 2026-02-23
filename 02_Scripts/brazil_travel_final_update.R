@@ -439,3 +439,61 @@ ceac_df <- make_brr_ceac(
 p_daly_ceac <- plot_brr_ceac(ceac_df, target_outcome = "DALY")
 p_death_ceac <- plot_brr_ceac(ceac_df, target_outcome = "Death")
 p_sae_ceac <- plot_brr_ceac(ceac_df, target_outcome = "SAE")
+
+
+
+## table
+
+ar_summary_all <- psa_df %>%
+  mutate(
+    setting = unname(setting_key[state]),
+    days = factor(days, levels = c("7d","14d","30d","90d")),
+    age_group = ifelse(age_group == "65", "65+", age_group)
+  ) %>%
+  filter(!is.na(setting)) %>%
+  pivot_longer(
+    cols = c(brr_sae, brr_death, brr_daly),
+    names_to = "outcome",
+    values_to = "brr"
+  ) %>%
+  mutate(
+    outcome = recode(outcome,
+                     brr_sae   = "SAE",
+                     brr_death = "Death",
+                     brr_daly  = "DALY"),
+    setting = factor(setting, levels = c("Low","Moderate","High"))
+  ) %>%
+  group_by(outcome, setting, age_group, days) %>%
+  summarise(
+    brr_med = median(brr, na.rm = TRUE),
+    brr_lo  = quantile(brr, 0.025, na.rm = TRUE),
+    brr_hi  = quantile(brr, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ar_table_wide <- ar_summary_all %>%
+  mutate(
+    brr_formatted = sprintf("%.2f [%.2f–%.2f]", brr_med, brr_lo, brr_hi)
+  ) %>%
+  dplyr::select(outcome, setting, age_group, days, brr_formatted) %>%
+  pivot_wider(names_from = days, values_from = brr_formatted) %>%
+  arrange(outcome, setting, age_group)
+
+idx_outcome <- table(ar_table_wide$outcome)
+
+kable(
+  ar_table_wide,
+  format = "html",
+  col.names = c("Outcome", "Setting", "Age Group",
+                "7 days", "14 days", "30 days", "90 days"),
+  caption = "Benefit–Risk Ratio (BRR) by Outcome, Setting, Age Group, and Travel Duration",
+  align = c("l", "c", "c", "r", "r", "r", "r")
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    font_size = 12
+  ) %>%
+  pack_rows(index = idx_outcome) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(2, bold = TRUE)

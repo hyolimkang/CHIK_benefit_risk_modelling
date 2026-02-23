@@ -50,6 +50,63 @@ true_inf_region <- combined_nnv_df_region_coverage_model %>%
 
 
 ## updates (using all draws)
+
+# unique total symptomatic draws
+tot_symp_by_region_draw <- all_draws_ix_true %>%
+  filter(Coverage == "cov50", VE == "VE0", Scenario == 1) %>%  
+  group_by(Region, draw_id) %>%
+  summarise(tot_symp = sum(total_pre_true, na.rm=TRUE), .groups="drop")
+
+# lhs symptomatic draws
+symp_by_draw <- lhs_sample_young %>%  
+  transmute(
+    draw_id   = row_number(),
+    symp_prop = as.numeric(symp_overall)
+  ) %>%
+  mutate(
+    symp_prop = pmin(pmax(symp_prop, 1e-6), 1 - 1e-6)
+  )
+
+# join symp rate and tot symp
+true_inf_by_region_draw <- tot_symp_by_region_draw %>%
+  left_join(symp_by_draw, by = "draw_id") %>%
+  mutate(
+    tot_inf = tot_symp / symp_prop   # = true infections for that draw
+  )
+
+# attack rates by draw
+AR_draw_by_region <- true_inf_by_region_draw %>%
+  left_join(S0_df, by = c("Region" = "region")) %>%
+  mutate(
+    H_S0 = tot_inf / total_S0,
+    AR_S0 = 1 - exp(-H_S0),      
+    AR_S0_pct = 100 * AR_S0
+  )
+
+# attack rate dists
+AR_draw_by_region %>%
+  filter(is.finite(AR_S0), AR_S0 > 0) %>%   
+  ggplot(aes(x = AR_S0)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 30) +
+  geom_density(linewidth = 0.8) +
+  facet_wrap(~ Region, scales = "free_y") +
+  scale_x_continuous(
+    labels = percent_format(accuracy = 1)   
+  )+
+  labs(x = "Attack rate (AR_S0 = tot_inf / total_S0)", y = "Density")
+
+# draws list
+draws_list <- split(AR_draw_by_region$AR_S0, AR_draw_by_region$Region)
+
+eps <- 1e-12
+draws_list <- lapply(draws_list, function(x){
+  x <- x[is.finite(x)]
+  x <- x[x > 0]                 
+  pmin(pmax(x, eps), 1 - eps)
+})
+
+
+
 true_inf_region <- all_draws_ix_true %>%
   group_by(Region, draw_id) %>%
   summarise(
@@ -111,6 +168,14 @@ AR_by_state <- list(
   lo  = setNames(AR_summary_by_region$AR_lo_S0,  AR_summary_by_region$region),
   hi  = setNames(AR_summary_by_region$AR_hi_S0,  AR_summary_by_region$region)
 )
+
+
+## check distribution empirically
+ggplot(AR_draw_by_region, aes(x = AR_S0)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 30) +
+  geom_density(linewidth = 0.8) +
+  facet_wrap(~ Region, scales = "free_y") +
+  labs(x = "Attack rate (AR_S0)", y = "Density")
 
 scale_foi_to_target_ar <- function(foi_daily, ar_target) {
   H0 <- sum(foi_daily, na.rm = TRUE)

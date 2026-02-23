@@ -301,7 +301,7 @@ psa_df <- bind_rows(psa_out_list)
 # ------------------------------------------------------------------------------
 n_entry_samples <- 50  # Number of entry day samples to average timing uncertainty
 
-ar_levels_to_run <- "mid" #c("lo","mid","hi")
+ar_levels_to_run <- c("lo","mid","hi")
 
 psa_out_list <- list()
 
@@ -548,6 +548,265 @@ for (d in seq_len(nrow(lhs_sample))) {
     cat("Completed", d, "of", nrow(lhs_sample), "PSA draws\n")
   }
 }
+
+
+#### using 1000 random draws of attack rates by each state
+# --- region key (state name -> lhs col suffix) ---
+region_key <- c(
+  "Ceará"="ce","Bahia"="bh","Paraíba"="pa","Pernambuco"="pn",
+  "Rio Grande do Norte"="rg","Piauí"="pi","Tocantins"="tc",
+  "Alagoas"="ag","Minas Gerais"="mg","Sergipe"="se","Goiás"="go"
+)
+
+# --- optional cache for speed ---
+H0_by_state <- lapply(states_to_run, function(st){
+  foi0 <- foi_daily_by_state[[st]]
+  if (is.null(foi0)) stop("State not found in foi_daily_by_state: ", st)
+  sum(foi0, na.rm = TRUE)
+})
+names(H0_by_state) <- states_to_run
+
+psa_out_list <- list()
+
+for (d in seq_len(nrow(lhs_sample))) {
+  
+  # ---- Sample uncertain parameters from LHS ----
+  draw_pars <- lhs_sample[d, ]
+  ve_d      <- lhs_sample$ve[d]
+  
+  # Vaccine-related SAE / death (u65 vs 65+)
+  p_sae_vacc_u65   <- lhs_sample$p_sae_vacc_u65[d]
+  p_sae_vacc_65    <- lhs_sample$p_sae_vacc_65[d]
+  p_death_vacc_u65 <- lhs_sample$p_death_vacc_u65[d]
+  p_death_vacc_65  <- lhs_sample$p_death_vacc_65[d]
+  
+  # Natural hosp (symptomatic -> hosp) by age group
+  p_sae_nat_11 <- lhs_sample$p_sae_nat_11[d]
+  p_sae_nat_17 <- lhs_sample$p_sae_nat_17[d]
+  p_sae_nat_64 <- lhs_sample$p_sae_nat_64[d]
+  p_sae_nat_65 <- lhs_sample$p_sae_nat_65[d]
+  
+  # Natural death (symptomatic -> death) by age group
+  p_death_nat_11 <- lhs_sample$p_death_nat_11[d]
+  p_death_nat_17 <- lhs_sample$p_death_nat_17[d]
+  p_death_nat_64 <- lhs_sample$p_death_nat_64[d]
+  p_death_nat_65 <- lhs_sample$p_death_nat_65[d]
+  
+  # Travel durations
+  travel_days <- list(
+    "7d"  = lhs_sample$trav_7d[d],
+    "14d" = lhs_sample$trav_14d[d],
+    "30d" = lhs_sample$trav_30d[d],
+    "90d" = lhs_sample$trav_90d[d]
+  )
+  
+  # Symptomatic proportion for this draw
+  symp_prop_d <- as.numeric(draw_pars$symp_overall)
+  
+  # ---------- loop over states ----------
+  for (st in states_to_run) {
+    
+    foi0 <- foi_daily_by_state[[st]]
+    if (is.null(foi0)) stop("State not found in foi_daily_by_state: ", st)
+    
+    # state-specific AR target from LHS
+    key <- region_key[[st]]
+    if (is.null(key)) stop("No region_key mapping for state: ", st)
+    
+    ar_target_raw <- as.numeric(lhs_sample[[paste0("ar_", key)]][d])
+    
+    # (see clamping discussion below)
+    eps_ar <- 1e-12
+    ar_target <- pmin(pmax(ar_target_raw, eps_ar), 1 - eps_ar)
+    
+    # scale FOI to hit this AR target
+    H0 <- H0_by_state[[st]]
+    if (!is.finite(H0) || H0 <= 0) stop("Non-positive FOI sum for state: ", st)
+    
+    Ht <- -log(1 - ar_target)
+    m  <- Ht / H0
+    foi_daily_scaled <- foi0 * m
+    
+    AR_total_state <- 1 - exp(-sum(foi_daily_scaled, na.rm = TRUE))  # should ~ ar_target
+    
+    # ---------- loop over age groups ----------
+    for (i in seq_len(nrow(all_risk))) {
+      
+      age <- as.character(all_risk$age_group[i])
+      
+      # 1) Assign vaccine-related risks (u65 vs 65+)
+      if (age == "65+") {
+        p_sae_vacc   <- p_sae_vacc_65
+        p_death_vacc <- p_death_vacc_65
+      } else {
+        p_sae_vacc   <- p_sae_vacc_u65
+        p_death_vacc <- p_death_vacc_u65
+      }
+      
+      # 2) Assign natural risks (age-specific; with proxies)
+      if (age == "1-11") {
+        p_sae_nat   <- p_sae_nat_11
+        p_death_nat <- p_death_nat_11
+      } else if (age == "12-17") {
+        p_sae_nat   <- p_sae_nat_17
+        p_death_nat <- p_death_nat_17
+      } else if (age == "18-64") {
+        p_sae_nat   <- p_sae_nat_64
+        p_death_nat <- p_death_nat_64
+      } else if (age == "65+") {
+        p_sae_nat   <- p_sae_nat_65
+        p_death_nat <- p_death_nat_65
+      } else {
+        stop("Unknown age group in all_risk: ", age)
+      }
+      
+      # ---------- loop over travel durations ----------
+      for (days_label in names(travel_days)) {
+        
+        D <- max(1L, round(travel_days[[days_label]]))
+        
+        L_days <- length(foi0)
+        max_entry <- max(1L, L_days - D + 1L)
+        
+        # sample entry days for this draw/state/age/duration
+        entry_days <- sample.int(max_entry, size = n_entry_samples, replace = TRUE)
+        
+        temp_results <- vector("list", length(entry_days))
+        
+        # ---------- loop over sampled entry days ----------
+        for (entry_idx in seq_along(entry_days)) {
+          
+          entry_day <- entry_days[entry_idx]
+          
+          # Travel-specific infection probability from scaled FOI
+          AR_travel <- compute_ar_travel(foi_daily_scaled, entry_day, D)
+          
+          res <- compute_outcome(
+            AR           = AR_travel,
+            p_hosp       = symp_prop_d * p_sae_nat,
+            p_death      = symp_prop_d * p_death_nat,
+            p_sae_vacc   = p_sae_vacc,
+            p_death_vacc = p_death_vacc,
+            VE_hosp      = ve_d,
+            VE_death     = ve_d
+          )
+          
+          # symptomatic per 10k
+          symp_nv_10k <- 1e4 * AR_travel * symp_prop_d
+          symp_v_10k  <- symp_nv_10k * (1 - ve_d)
+          
+          # non-hosp symptomatic per 10k
+          nonhosp_symp_nv_10k <- pmax(0, symp_nv_10k - res$risk_nv_hosp)
+          nonhosp_symp_v_10k  <- pmax(0, symp_v_10k  - res$risk_v_hosp)
+          
+          dz_nv <- compute_daly_one(
+            age_group = age,
+            deaths_10k = res$risk_nv_death,
+            hosp_10k = res$risk_nv_hosp,
+            nonhosp_symp_10k = nonhosp_symp_nv_10k,
+            symp_10k = symp_nv_10k,
+            sae_10k = 0, deaths_sae_10k = 0,
+            draw_pars = draw_pars
+          )
+          
+          dz_v <- compute_daly_one(
+            age_group = age,
+            deaths_10k = res$risk_v_death,
+            hosp_10k = res$risk_v_hosp,
+            nonhosp_symp_10k = nonhosp_symp_v_10k,
+            symp_10k = symp_v_10k,
+            sae_10k = 0, deaths_sae_10k = 0,
+            draw_pars = draw_pars
+          )
+          
+          sae <- compute_daly_one(
+            age_group = age,
+            deaths_10k = 0, hosp_10k = 0, nonhosp_symp_10k = 0, symp_10k = 0,
+            sae_10k = 1e4 * p_sae_vacc,
+            deaths_sae_10k = 1e4 * p_death_vacc,
+            draw_pars = draw_pars
+          )
+          
+          daly_averted <- dz_nv$daly_dz - dz_v$daly_dz
+          daly_sae     <- sae$daly_sae
+          brr_daly     <- ifelse(daly_sae > 0, daly_averted / daly_sae, NA_real_)
+          
+          risk_nv_10k_sae <- res$risk_nv_hosp + res$risk_nv_death
+          risk_v_10k_sae  <- (res$risk_v_hosp + res$risk_v_death) + res$excess_10k_sae
+          
+          temp_results[[entry_idx]] <- list(
+            AR_travel = AR_travel,
+            
+            risk_nv_10k_sae = risk_nv_10k_sae,
+            risk_v_10k_sae  = risk_v_10k_sae,
+            averted_10k_sae = res$averted_10k_sae,
+            excess_10k_sae  = res$excess_10k_sae,
+            brr_sae         = res$brr_sae,
+            
+            risk_nv_10k_death = res$risk_nv_death,
+            risk_v_10k_death  = res$risk_v_death + res$excess_10k_death,
+            averted_10k_death = res$averted_10k_death,
+            excess_10k_death  = res$excess_10k_death,
+            brr_death         = res$brr_death,
+            
+            daly_dz_nv   = dz_nv$daly_dz,
+            daly_dz_v    = dz_v$daly_dz,
+            daly_averted = daly_averted,
+            daly_sae     = daly_sae,
+            brr_daly     = brr_daly,
+            yll_dz_nv    = dz_nv$yll_dz,
+            yll_dz_v     = dz_v$yll_dz,
+            yld_dz_nv    = dz_nv$yld_dz,
+            yld_dz_v     = dz_v$yld_dz
+          )
+        }
+        
+        psa_out_list[[length(psa_out_list) + 1]] <- data.frame(
+          draw         = d,
+          state        = st,
+          ar_target    = ar_target_raw,           # 원본(클램프 전)도 남기기
+          AR_total     = AR_total_state,
+          AR_total_pct = AR_total_state * 100,
+          days         = days_label,
+          age_group    = age,
+          entry_day    = median(entry_days),
+          
+          AR           = median(sapply(temp_results, `[[`, "AR_travel"), na.rm = TRUE),
+          
+          risk_nv_10k_sae = median(sapply(temp_results, `[[`, "risk_nv_10k_sae"), na.rm = TRUE),
+          risk_v_10k_sae  = median(sapply(temp_results, `[[`, "risk_v_10k_sae"),  na.rm = TRUE),
+          averted_10k_sae = median(sapply(temp_results, `[[`, "averted_10k_sae"), na.rm = TRUE),
+          excess_10k_sae  = median(sapply(temp_results, `[[`, "excess_10k_sae"),  na.rm = TRUE),
+          brr_sae         = median(sapply(temp_results, `[[`, "brr_sae"),         na.rm = TRUE),
+          
+          risk_nv_10k_death = median(sapply(temp_results, `[[`, "risk_nv_10k_death"), na.rm = TRUE),
+          risk_v_10k_death  = median(sapply(temp_results, `[[`, "risk_v_10k_death"),  na.rm = TRUE),
+          averted_10k_death = median(sapply(temp_results, `[[`, "averted_10k_death"), na.rm = TRUE),
+          excess_10k_death  = median(sapply(temp_results, `[[`, "excess_10k_death"),  na.rm = TRUE),
+          brr_death         = median(sapply(temp_results, `[[`, "brr_death"),         na.rm = TRUE),
+          
+          daly_nv      = median(sapply(temp_results, `[[`, "daly_dz_nv"),   na.rm = TRUE),
+          daly_v       = median(sapply(temp_results, `[[`, "daly_dz_v"),    na.rm = TRUE),
+          daly_averted = median(sapply(temp_results, `[[`, "daly_averted"), na.rm = TRUE),
+          daly_sae     = median(sapply(temp_results, `[[`, "daly_sae"),     na.rm = TRUE),
+          brr_daly     = median(sapply(temp_results, `[[`, "brr_daly"),     na.rm = TRUE),
+          
+          yll_nv = median(sapply(temp_results, `[[`, "yll_dz_nv"), na.rm = TRUE),
+          yll_v  = median(sapply(temp_results, `[[`, "yll_dz_v"),  na.rm = TRUE),
+          yld_nv = median(sapply(temp_results, `[[`, "yld_dz_nv"), na.rm = TRUE),
+          yld_v  = median(sapply(temp_results, `[[`, "yld_dz_v"),  na.rm = TRUE),
+          
+          row.names = NULL
+        )
+      } # end days_label loop
+    } # end age loop
+  } # end state loop
+  
+  if (d %% 10 == 0) {
+    cat("Completed", d, "of", nrow(lhs_sample), "PSA draws\n")
+  }
+}
+
 
 # Final combined dataframe
 psa_df <- dplyr::bind_rows(psa_out_list)

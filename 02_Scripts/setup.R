@@ -19,7 +19,7 @@ options(scipen = 999)
 
 # Data
 load("01_Data/lhs_sample_young.RData")
-load("01_Data/le_sample.RData"))
+load("01_Data/le_sample.RData")
 load("01_Data/chikv_fatal_hosp_rate.RData")
 load("01_Data/sim_results_vc_ixchiq_model.RData")
 load("01_Data/combined_nnv_national_age_ixchiq.RData")

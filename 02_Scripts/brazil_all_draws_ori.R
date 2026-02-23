@@ -69,17 +69,17 @@ names(preui_all) <- c("Ceará","Alagoas", "Bahia", "Goiás",
                       "Pernambuco", "Rio Grande do Norte", 
                       "Sergipe", "Tocantins")
 setting_key <- c(
-  "Ceará"             = "10%+",
-  "Bahia"             = "<5%",
-  "Paraíba"           = "5-10%",
-  "Pernambuco"        = "5-10%",
-  "Rio Grande do Norte" = "5-10%",
-  "Piauí"             = "10%+",
-  "Tocantins"         = "5-10%",
-  "Alagoas"           = "10%+",
-  "Minas Gerais"      = "<5%",
-  "Sergipe"           = "5-10%",
-  "Goiás"             = "<5%"
+  "Ceará"             = "High",
+  "Bahia"             = "Low",
+  "Paraíba"           = "High",
+  "Pernambuco"        = "Moderate",
+  "Rio Grande do Norte" = "Low",
+  "Piauí"             = "High",
+  "Tocantins"         = "Moderate",
+  "Alagoas"           = "High",
+  "Minas Gerais"      = "Low",
+  "Sergipe"           = "Low",
+  "Goiás"             = "Low"
 )
 
 ### before scaling
@@ -914,7 +914,7 @@ brr_table_long_setting <- brr_draw_summary_setting %>%
 
 brr_table_wide_setting <- brr_table_long_setting %>%
   mutate(
-    setting = factor(setting, levels = c("<5%", "5-10%", "10%+"))
+    setting = factor(setting, levels = c("Low","Moderate","High"))
   ) %>%
   pivot_wider(names_from = VE_col, values_from = brr_formatted) %>%
   arrange(outcome, scenario, setting, age_group) %>%

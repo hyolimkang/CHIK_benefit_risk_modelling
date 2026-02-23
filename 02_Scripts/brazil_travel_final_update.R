@@ -193,15 +193,11 @@ brr_labels <- c("0.01", "0.1", "1", "10", "100")
 plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
                              target_outcome, title_text, color_val,
                              group_var = "setting",
-                             shape_var = NULL,        # <- "AgeCat" 또는 "age_group" 자동 선택
+                             shape_var = NULL,        
                              show_prop = TRUE,
                              eps_x = 1e-9,
                              keep_zero_axis = TRUE) {
-  
-  library(dplyr)
-  library(ggplot2)
-  library(rlang)
-  
+
   g <- rlang::sym(group_var)
   
   if (!(group_var %in% names(br_summarized))) {
@@ -211,7 +207,6 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
     stop("Column `", group_var, "` is not found in bg_grid_optimized.")
   }
   
-  # shape 변수 자동 선택
   if (is.null(shape_var)) {
     if ("AgeCat" %in% names(br_summarized)) {
       shape_var <- "AgeCat"
@@ -276,7 +271,6 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
       color = color_val, height = 0, linewidth = 0.6
     )
   
-  # ✅ point layer: shape_var가 있으면 shape mapped, 없으면 그냥 점
   if (!is.null(shape_var)) {
     p <- p +
       geom_point(
@@ -311,7 +305,7 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
     scale_y_continuous(expand = c(0, 0)) +
     labs(
       title = title_text,
-      x = "Vaccine related excess outcome (per 10,000 vaccinated individuals)",
+      x = "Vaccine attributable adverse outcome (per 10,000 vaccinated individuals)",
       y = "Outcomes averted by vaccination (per 10,000 vaccinated individuals)"
     ) +
     theme_bw() +
@@ -323,7 +317,6 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
     )
   
   if (!is.null(shape_var)) {
-    # age_group를 쓸 때도 기존 모양 매핑 유지
     p <- p + scale_shape_manual(
       values = c("1-11"=21, "12-17"=22, "18-64"=23, "65+"=24),
       name = "Age group"
@@ -338,18 +331,21 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
 }
 
 p_daly_mid  <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
-                                "DALY", "Benefit-Risk Assessment: DALY", "#A23B72")
+                                "DALY", "Benefit-Risk assessment: DALY", "#A23B72") + 
+                theme(text = element_text(family = "Calibri"))
 
 
 p_death_mid <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
-                                "Death", "Benefit-Risk Assessment: Death", "#B8860B")
+                                "Death", "Benefit-Risk assessment: Death", "#B8860B")+ 
+                theme(text = element_text(family = "Calibri"))
+
 
 p_sae_mid   <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
-                                "SAE",   "Benefit-Risk Assessment: SAE",   "#1B7F1B")
+                                "SAE",   "Benefit-Risk assessment: SAE",   "#1B7F1B")+ 
+                theme(text = element_text(family = "Calibri"))
 
 
-library(dplyr)
-library(tidyr)
+
 
 make_brr_long <- function(psa_df, setting_key) {
   psa_df %>%

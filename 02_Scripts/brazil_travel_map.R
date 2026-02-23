@@ -238,7 +238,6 @@ states_brr_full <- states_base %>%
 
 bb <- sf::st_bbox(states_base)
 
-p_brr_cat <- g# 1) DALY만 필터 + BRR(DALY)= y_10k/x_daly_10k
 age_levels <- c("1-11","12-17","18-64","65+")
 
 daly_dat <- draw_level_xy_true %>%
@@ -284,7 +283,7 @@ states_brr_full <- states_base %>%
 # (optional but recommended) lock bbox to full Brazil
 bb <- sf::st_bbox(states_base)
 
-# 5) Plot: EXACTLY the same style as your previous code
+# 5) Plot
 p_brr_cat <- ggplot(states_brr_full) +
   geom_sf(aes(fill = pr_cat), colour="white", linewidth=0.01) +
   facet_grid(setting ~ AgeCat) +

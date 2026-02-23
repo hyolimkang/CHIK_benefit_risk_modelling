@@ -358,9 +358,9 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
     } +
     
     # facet by age group
-    #facet_wrap(~ setting + AgeCat, scales = "free", ncol = 4) +
+    facet_wrap(~ setting + AgeCat, scales = "free", ncol = 4) +
     #facet_grid(setting ~ AgeCat, scales = "free") +
-    facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
+    #facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
 
     #facet_wrap(~ AgeCat, scales = "free", ncol = 2) +
     

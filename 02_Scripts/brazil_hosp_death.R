@@ -123,3 +123,4 @@ hosp <- hosp_20$p_hosp
 fatal <- death_20$p_death
 
 save(hosp, fatal, nh_fatal, file = "00_Data/0_2_Processed/chikv_fatal_hosp_rate.RData")
+save(hosp, fatal, nh_fatal, file = "01_Data/chikv_fatal_hosp_rate.RData")

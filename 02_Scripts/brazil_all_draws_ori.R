@@ -1,3 +1,26 @@
+age_groups <- c(mean(0:1),
+                mean(1:4),
+                mean(5:9),
+                mean(10:11),
+                mean(12:17),
+                mean(18:19),
+                mean(20:24),
+                mean(25:29),
+                mean(30:34),
+                mean(35:39),
+                mean(40:44),
+                mean(45:49),
+                mean(50:54),
+                mean(55:59),
+                mean(60:64),
+                mean(65:69),
+                mean(70:74),
+                mean(75:79),
+                mean(80:84),
+                mean(85:89)
+)
+
+conflicted::conflicts_prefer(dplyr::filter)
 # make all draws for symptomatic cases
 # draw base impact
 posterior_list <- list(
@@ -47,16 +70,16 @@ names(preui_all) <- c("Ceará","Alagoas", "Bahia", "Goiás",
                       "Sergipe", "Tocantins")
 setting_key <- c(
   "Ceará"             = "10%+",
-  "Bahia"             = "<1%",
-  "Paraíba"           = "1-10%",
-  "Pernambuco"        = "1-10%",
-  "Rio Grande do Norte" = "1-10%",
+  "Bahia"             = "<5%",
+  "Paraíba"           = "5-10%",
+  "Pernambuco"        = "5-10%",
+  "Rio Grande do Norte" = "5-10%",
   "Piauí"             = "10%+",
-  "Tocantins"         = "1-10%",
+  "Tocantins"         = "5-10%",
   "Alagoas"           = "10%+",
-  "Minas Gerais"      = "<1%",
-  "Sergipe"           = "1-10%",
-  "Goiás"             = "<1%"
+  "Minas Gerais"      = "<5%",
+  "Sergipe"           = "5-10%",
+  "Goiás"             = "<5%"
 )
 
 ### before scaling
@@ -277,6 +300,35 @@ scale_symp_by_rho_post <- function(post_arr, rho_vec) {
   post_arr
 }
 
+calc_total_fatal_draws <- function(pre_list, post_arr, hosp_rate, fatal_rate, nh_fatal_rate) {
+  # ── Pre ────────────────────────────────
+  pre_conv <- make_fatal_hosp_draws(pre_list, hosp_rate, fatal_rate, nh_fatal_rate)
+  pre_fatal_list <- lapply(pre_conv, `[[`, "fatal")
+  pre_arr <- simplify2array(pre_fatal_list)
+  if (length(dim(pre_arr)) == 2) {
+    pre_arr <- array(pre_arr, dim = c(dim(pre_arr), 1))
+  }
+  
+  # ── Post ───────────────────────────────
+  post_list <- lapply(seq(dim(post_arr)[3]), function(i) post_arr[ , , i])
+  post_conv <- make_fatal_hosp_draws(post_list, hosp_rate, fatal_rate, nh_fatal_rate)
+  post_fatal_list <- lapply(post_conv, `[[`, "fatal")
+  post_arr <- simplify2array(post_fatal_list)
+  
+  # ── Align draws ────────────────────────
+  n_draws <- min(dim(pre_arr)[3], dim(post_arr)[3])
+  pre_arr  <- pre_arr[ , , 1:n_draws]
+  post_arr <- post_arr[ , , 1:n_draws]
+  
+  # ── Sum across all ages × weeks ────────
+  total_pre  <- apply(pre_arr,  3, sum, na.rm = TRUE)
+  total_post <- apply(post_arr, 3, sum, na.rm = TRUE)
+  
+  tibble(draw_id = 1:n_draws,
+         total_pre = total_pre,
+         total_post = total_post)
+}
+
 calc_total_fatal_draws_rho <- function(pre_list, post_arr,
                                        hosp_rate, fatal_rate, nh_fatal_rate,
                                        rho_vec) {
@@ -360,7 +412,7 @@ make_daly_draws <- function(symp_list, hosp_rate, fatal_rate, nh_fatal_rate,
     
     yld_total <- yld_acute + yld_subacute + yld_chronic
     
-    # precomputed 기대수명 벡터 사용
+    # precomputed 
     yll <- sweep(fatal, 1, le_left_vec, `*`)
     
     daly_tot <- yld_total + yll
@@ -601,7 +653,7 @@ tot_vacc_map_true <- combined_nnv_df_region_coverage_model %>%
       TRUE ~ NA_character_
     )
   ) %>%
-  filter(!is.na(AgeCat)) %>%
+  dplyr::filter(!is.na(AgeCat)) %>%
   group_by(scenario, region, AgeCat, VE) %>%
   summarise(tot_vacc_grp = sum(tot_vacc, na.rm = TRUE), .groups = "drop") %>%
   # keep only the targeted AgeCat for each scenario
@@ -614,7 +666,7 @@ tot_vacc_map_true <- combined_nnv_df_region_coverage_model %>%
       TRUE ~ 0L
     )
   ) %>%
-  filter(target == 1L) %>%
+  dplyr::filter(target == 1L) %>%
   transmute(
     scenario = as.integer(gsub("Scenario_", "", scenario)),
     AgeCat, VE, tot_vacc_grp, region
@@ -822,7 +874,7 @@ kable(
 # -------------------------------
 summary_long_setting <- draw_level_xy_true %>%
   mutate(
-    setting = factor(setting, levels = c("<1%", "1-10%", "10%+"))
+    setting = factor(setting, levels = c("<5%", "5-10%", "10%+"))
   )%>%
   group_by(outcome, Scenario, AgeCat, VE_label, setting) %>%
   summarise(
@@ -862,7 +914,7 @@ brr_table_long_setting <- brr_draw_summary_setting %>%
 
 brr_table_wide_setting <- brr_table_long_setting %>%
   mutate(
-    setting = factor(setting, levels = c("<1%", "1-10%", "10%+"))
+    setting = factor(setting, levels = c("<5%", "5-10%", "10%+"))
   ) %>%
   pivot_wider(names_from = VE_col, values_from = brr_formatted) %>%
   arrange(outcome, scenario, setting, age_group) %>%

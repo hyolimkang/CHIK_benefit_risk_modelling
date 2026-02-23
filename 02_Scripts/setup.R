@@ -550,12 +550,17 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
 ##------------------------------------------------------------------------------
 ## LHS Samples 
 ##------------------------------------------------------------------------------
-
 set.seed(123)
 runs = 1000
-A <- randomLHS (n = runs, 
-                k = 51) 
-lhs_sample <- matrix (nrow = nrow(A), ncol = ncol(A))
+region_key <- c(
+  "Ceará"="ce","Bahia"="bh","Paraíba"="pa","Pernambuco"="pn",
+  "Rio Grande do Norte"="rg","Piauí"="pi","Tocantins"="tc",
+  "Alagoas"="ag","Minas Gerais"="mg","Sergipe"="se","Goiás"="go"
+)
+
+A <- randomLHS(n = runs, k = 51 + length(region_key))
+lhs_sample <- matrix(NA_real_, nrow = nrow(A), ncol = ncol(A))
+
 
 # vacc sae and death
 lhs_sample [,1]   <- qbeta(A[,1], shape1 = 6+0.5, shape2 = 32949-6+0.5) # conservative values
@@ -622,6 +627,7 @@ lhs_sample [,49]  <- qlnorm (p = A[,49], meanlog = 0, sdlog =  0.0511915, lower.
 lhs_sample [,50]  <- qlnorm (p = A[,50], meanlog = 0.6931472, sdlog = 0.08380206, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,51]   <- qbeta (p = A[,51], shape1 = 164.6044, shape2 = 618335.4, ncp=0, lower.tail = TRUE, log.p = FALSE)
 
+
 cols <- c(
   "p_sae_vacc_u65",
   "p_sae_vacc_65",
@@ -681,7 +687,29 @@ cols <- c(
   "dur_30m", 
   "fatal_nonhosp"
 )
-colnames (lhs_sample) <- cols
-lhs_sample   <- as.data.frame(lhs_sample)
 
+draws_list <- split(AR_draw_by_region$AR_S0, AR_draw_by_region$Region)
 
+eps <- 1e-12
+draws_list <- lapply(draws_list, function(x){
+  x <- x[is.finite(x)]
+  pmin(pmax(x, eps), 1 - eps)
+})
+
+regs <- names(region_key)
+start_col <- 52
+
+for (i in seq_along(regs)) {
+  reg <- regs[i]
+  u   <- A[, 51 + i]   
+  
+  lhs_sample[, start_col + i - 1] <- as.numeric(
+    quantile(draws_list[[reg]], probs = u, type = 8, na.rm = TRUE)
+  )
+}
+
+cols_ar <- paste0("ar_", unname(region_key))  # ar_ce ... ar_go
+cols2 <- c(cols, cols_ar)
+
+colnames(lhs_sample) <- cols2
+lhs_sample <- as.data.frame(lhs_sample)

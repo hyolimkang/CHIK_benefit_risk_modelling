@@ -1256,5 +1256,4 @@ ceac_t1_wide <- ceac_t1 %>%
   dplyr::select(outcome, setting, AgeCat, threshold, VE_label, p_fmt) %>%
   tidyr::pivot_wider(names_from = VE_label, values_from = p_fmt)
 
-write_xlsx(ceac_t1_wide, "06_Results/ceac_travel.xlsx")
-write_xlsx(ceac_df, "06_Results/ceac_travel_all.xlsx")
+write_xlsx(ceac_t1_wide, "06_Results/ceac_ori.xlsx")

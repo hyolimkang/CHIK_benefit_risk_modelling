@@ -9,7 +9,7 @@ setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandT
 # load packages
 pacman::p_load(
   dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr, flextable, sf, raster, officer, viridis,
-  cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern
+  cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern, showtext, writexl
 )
 
 # Clean up from previous code / runs
@@ -36,6 +36,15 @@ load("01_Data/all_draws_daly_true.RData")
 load("01_Data/all_draws_sae_true.RData")
 
 all_risk <- read.csv("01_Data/all_risk_four_age.csv")
+
+# ggplot calibri font
+font_add("Calibri",
+         regular    = "C:/WINDOWS/Fonts/calibri.ttf",
+         bold       = "C:/WINDOWS/Fonts/calibrib.ttf",
+         italic     = "C:/WINDOWS/Fonts/calibrii.ttf",
+         bolditalic = "C:/WINDOWS/Fonts/calibriz.ttf")
+
+showtext_auto()
 
 # ----------------------------------------------------------
 # Functions 

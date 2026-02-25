@@ -23,7 +23,6 @@ fn_br_space_benefit_by_setting <- function(psa_data,
       days = factor(days, levels = days_levels),
       setting = unname(setting_key[state])
     ) %>%
-    # 매핑 실패 방지
     filter(!is.na(setting)) %>%
     pivot_longer(
       cols = c(
@@ -88,7 +87,6 @@ fn_panel_range <- function(br_representative_benefit,
   
   library(dplyr)
   
-  # group_var가 "setting" 또는 "ar_category" 등일 때 모두 동작하게
   g <- rlang::sym(group_var)
   
   panel_ranges <- br_representative_benefit %>%
@@ -148,7 +146,6 @@ fn_br_summ <- function(br_representative_benefit,
   
   g <- rlang::sym(group_var)
   
-  # AgeCat 있으면 그걸 쓰고, 없으면 age_group 사용
   if (is.null(age_var)) {
     if ("AgeCat" %in% names(br_representative_benefit)) {
       age_var <- "AgeCat"

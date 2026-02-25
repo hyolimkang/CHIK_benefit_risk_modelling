@@ -31,27 +31,8 @@ S0_df <- get_total_S0(sim_results_vc_ixchiq_model, t0 = 1)
 
 S0_df <- S0_df %>% distinct(region, total_S0)
 
-p_symp <- 0.5242478
+## total symptomatic draws using all draws
 
-true_inf_region <- combined_nnv_df_region_coverage_model %>%
-  distinct(region, pre_vacc, pre_vacc_lo, pre_vacc_hi) %>%
-  group_by(region) %>%
-  summarise(
-    tot_symp_mid = sum(pre_vacc),
-    tot_symp_lo  = sum(pre_vacc_lo),
-    tot_symp_hi  = sum(pre_vacc_hi),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    true_inf_mid = tot_symp_mid / p_symp,
-    true_inf_lo  = tot_symp_lo  / p_symp,
-    true_inf_hi  = tot_symp_hi  / p_symp
-  )
-
-
-## updates (using all draws)
-
-# unique total symptomatic draws
 tot_symp_by_region_draw <- all_draws_ix_true %>%
   filter(Coverage == "cov50", VE == "VE0", Scenario == 1) %>%  
   group_by(Region, draw_id) %>%

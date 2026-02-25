@@ -332,7 +332,6 @@ calc_total_fatal_draws <- function(pre_list, post_arr, hosp_rate, fatal_rate, nh
 calc_total_fatal_draws_rho <- function(pre_list, post_arr,
                                        hosp_rate, fatal_rate, nh_fatal_rate,
                                        rho_vec) {
-  # 1) draw 길이 맞추기
   n_draws <- min(length(pre_list), dim(post_arr)[3], length(rho_vec))
   pre_list <- pre_list[1:n_draws]
   post_arr <- post_arr[,,1:n_draws]
@@ -342,7 +341,6 @@ calc_total_fatal_draws_rho <- function(pre_list, post_arr,
   pre_list_true <- scale_symp_by_rho_pre(pre_list, rho_vec)
   post_arr_true <- scale_symp_by_rho_post(post_arr, rho_vec)
   
-  # 3) 기존 함수 그대로 사용
   calc_total_fatal_draws(pre_list_true, post_arr_true,
                          hosp_rate, fatal_rate, nh_fatal_rate)
 }
@@ -500,7 +498,6 @@ calc_total_daly_draws_rho <- function(pre_list, post_arr,
                                       le_left_vec,
                                       rho_vec) {
   
-  # 1) draw 길이 맞추기
   n_draws <- min(length(pre_list), dim(post_arr)[3], length(rho_vec))
   pre_list <- pre_list[1:n_draws]
   post_arr <- post_arr[,,1:n_draws]
@@ -510,7 +507,6 @@ calc_total_daly_draws_rho <- function(pre_list, post_arr,
   pre_list_true <- scale_symp_by_rho_pre(pre_list, rho_vec)
   post_arr_true <- scale_symp_by_rho_post(post_arr, rho_vec)
   
-  # 3) 기존 DALY 함수 그대로
   calc_total_daly_draws(
     pre_list = pre_list_true,
     post_arr = post_arr_true,
@@ -552,10 +548,8 @@ all_draws_daly_true <- purrr::imap_dfr(postsim_vc_ixchiq_model, function(region_
         
         post_arr <- scen$sim_result$age_array_raw_symp
         
-        # 해당 조합에서 가능한 draw 수
         n_draws <- min(length(pre_list), dim(post_arr)[3])
         
-        # rho는 독립적으로 리샘플링 (500 rho pool -> 1000 draw도 가능)
         rho_vec <- sample(rho_pool_region, size = n_draws, replace = TRUE)
         
         draw_totals <- calc_total_daly_draws_rho(
@@ -611,6 +605,13 @@ all_draws_sae_true <- all_draws_hosp_true %>%
     total_post = total_post_hosp + total_post_fatal
   ) %>%
   dplyr::select(draw_id, total_pre, total_post, Region, VE, Coverage, Scenario)
+
+
+
+save(all_draws_ix_true, file = "01_Data/all_draws_ix_true.RData")
+save(all_draws_hosp_true, file = "01_Data/all_draws_hosp_true.RData")
+save(all_draws_daly_true, file = "01_Data/all_draws_daly_true.RData")
+save(all_draws_fatal_true, file = "01_Data/all_draws_fatal_true.RData")
 
 
 # add setting key variable
@@ -941,6 +942,10 @@ kable(
 # ------------------------------------------------------------------------------
 # Final Visualization for assessment plot
 # ------------------------------------------------------------------------------
+log_min <- -2
+log_max <- 2
+log_range <- seq(log_min, log_max, by = 1)
+brr_labels <- c("0.01", "0.1", "1", "10", "100")
 
 create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
                            grid_n = 150, pad = 1.10,
@@ -1100,7 +1105,6 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
 # by setting
 plot_sae   <- create_br_plot(summary_long_setting, "SAE")+ 
   theme(text = element_text(family = "Calibri")) +
-  theme(text = element_text(family = "Calibri"))+
   labs(tag = "D") +
   theme(
     plot.tag = element_text(face = "bold", size = 16),
@@ -1109,7 +1113,6 @@ plot_sae   <- create_br_plot(summary_long_setting, "SAE")+
 
 plot_death <- create_br_plot(summary_long_setting, "Death")+ 
   theme(text = element_text(family = "Calibri")) +
-  theme(text = element_text(family = "Calibri"))+
   labs(tag = "C") +
   theme(
     plot.tag = element_text(face = "bold", size = 16),
@@ -1118,7 +1121,6 @@ plot_death <- create_br_plot(summary_long_setting, "Death")+
 
 plot_daly  <- create_br_plot(summary_long_setting, "DALY")+ 
   theme(text = element_text(family = "Calibri")) +
-  theme(text = element_text(family = "Calibri"))+
   labs(tag = "B") +
   theme(
     plot.tag = element_text(face = "bold", size = 16),
@@ -1126,9 +1128,9 @@ plot_daly  <- create_br_plot(summary_long_setting, "DALY")+
   ) 
 
 # national
-plot_sae   <- create_br_plot(summary_long_true, "SAE")
-plot_death <- create_br_plot(summary_long_true, "Death")
-plot_daly  <- create_br_plot(summary_long_true, "DALY")
+#plot_sae   <- create_br_plot(summary_long_true, "SAE")
+#plot_death <- create_br_plot(summary_long_true, "Death")
+#plot_daly  <- create_br_plot(summary_long_true, "DALY")
 
 plot_daly
 plot_sae

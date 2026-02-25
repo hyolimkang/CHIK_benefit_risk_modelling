@@ -550,7 +550,7 @@ for (d in seq_len(nrow(lhs_sample))) {
 }
 
 
-#### using 1000 random draws of attack rates by each state
+#### using 1000 random draws of attack rates by each state----------------------
 # --- region key (state name -> lhs col suffix) ---
 region_key <- c(
   "Ceará"="ce","Bahia"="bh","Paraíba"="pa","Pernambuco"="pn",
@@ -615,7 +615,6 @@ for (d in seq_len(nrow(lhs_sample))) {
     
     ar_target_raw <- as.numeric(lhs_sample[[paste0("ar_", key)]][d])
     
-    # (see clamping discussion below)
     eps_ar <- 1e-12
     ar_target <- pmin(pmax(ar_target_raw, eps_ar), 1 - eps_ar)
     
@@ -764,7 +763,7 @@ for (d in seq_len(nrow(lhs_sample))) {
         psa_out_list[[length(psa_out_list) + 1]] <- data.frame(
           draw         = d,
           state        = st,
-          ar_target    = ar_target_raw,           # 원본(클램프 전)도 남기기
+          ar_target    = ar_target_raw,           
           AR_total     = AR_total_state,
           AR_total_pct = AR_total_state * 100,
           days         = days_label,

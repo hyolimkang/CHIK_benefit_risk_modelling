@@ -716,3 +716,46 @@ cols2 <- c(cols, cols_ar)
 
 colnames(lhs_sample) <- cols2
 lhs_sample <- as.data.frame(lhs_sample)
+
+
+# tables
+digits_prob_default <- 1
+digits_prob_small   <- 4
+digits_other <- 2
+summ_one_fmt <- function(x, name,
+                         digits_prob_default = 1,
+                         digits_prob_small   = 4,
+                         digits_other        = 4) {
+  x <- x[is.finite(x)]
+  qs <- quantile(x, probs = c(0.025, 0.5, 0.975), na.rm = TRUE, type = 8)
+  
+  is_pct <- grepl("^(p_|ve$|ar_)", name)
+  
+  small_prob <- grepl("^p_.*_vacc_", name) || grepl("^p_.*vacc", name) || grepl("^p_death_", name)
+  
+  if (is_pct) {
+    qs <- qs * 100
+    d <- if (small_prob) digits_prob_small else digits_prob_default
+    fmt <- function(v) formatC(v, format = "f", digits = d)
+    paste0(fmt(qs[2]), "% (95% UI: ", fmt(qs[1]), "% - ", fmt(qs[3]), "%)")
+  } else {
+    fmt <- function(v) formatC(v, format = "f", digits = digits_other)
+    paste0(fmt(qs[2]), " (95% UI: ", fmt(qs[1]), " - ", fmt(qs[3]), ")")
+  }
+}
+
+summary_tbl <- data.frame(
+  parameter = names(lhs_sample),
+  value = vapply(
+    names(lhs_sample),
+    FUN = function(nm) summ_one_fmt(lhs_sample[[nm]], nm,
+                                    digits_prob_default, digits_prob_small, digits_other),
+    FUN.VALUE = character(1)
+  ),
+  row.names = NULL,
+  stringsAsFactors = FALSE
+)
+
+subset(summary_tbl, grepl("^p_death_", parameter))
+
+write.csv(summary_tbl, "06_Results/lhs_sample_summary_95ui.csv", row.names = FALSE)

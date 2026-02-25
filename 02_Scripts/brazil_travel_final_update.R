@@ -263,12 +263,12 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
     geom_errorbar(
       data = plot_data,
       aes(x = x_med, ymin = y_lo, ymax = y_hi),
-      color = color_val, width = 0, linewidth = 0.6
+      color = color_val, width = 0, linewidth = 0.5
     ) +
     geom_errorbarh(
       data = plot_data,
       aes(y = y_med, xmin = x_lo, xmax = x_hi),
-      color = color_val, height = 0, linewidth = 0.6
+      color = color_val, height = 0, linewidth = 0.5
     )
   
   if (!is.null(shape_var)) {
@@ -276,28 +276,28 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
       geom_point(
         data = plot_data,
         aes(x = x_med, y = y_med, shape = !!s),
-        fill = "white", color = color_val, size = 3, stroke = 1
+        fill = "white", color = color_val, size = 1.5, stroke = 1
       )
   } else {
     p <- p +
       geom_point(
         data = plot_data,
         aes(x = x_med, y = y_med),
-        fill = "white", color = color_val, size = 3, stroke = 1
+        fill = "white", color = color_val, size = 1.5, stroke = 1
       )
   }
   
-  if (show_prop) {
-    p <- p +
-      geom_label(
-        data = panel_prop,
-        aes(x = -Inf, y = Inf, label = label),
-        hjust = 0, vjust = 1, size = 3,
-        inherit.aes = FALSE,
-        label.size = 0.25,
-        fill = "white", alpha = 0.75, colour = "black"
-      )
-  }
+  #if (show_prop) {
+  #  p <- p +
+  #    geom_label(
+  #      data = panel_prop,
+  #      aes(x = -Inf, y = Inf, label = label),
+  #      hjust = 0, vjust = 1, size = 3,
+  #      inherit.aes = FALSE,
+  #      label.size = 0.25,
+  #      fill = "white", alpha = 0.75, colour = "black"
+  #    )
+  #}
   
   p <- p +
     facet_wrap(facet_formula, scales = "free", ncol = 4) +
@@ -332,19 +332,39 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
 
 p_daly_mid  <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
                                 "DALY", "Benefit-Risk assessment: DALY", "#A23B72") + 
-                theme(text = element_text(family = "Calibri"))
+                theme(text = element_text(family = "Calibri"))+
+                labs(tag = "B") +
+                theme(
+                plot.tag = element_text(face = "bold", size = 16),
+                plot.tag.position = c(0, 1) 
+                 )
 
 
 p_death_mid <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
                                 "Death", "Benefit-Risk assessment: Death", "#B8860B")+ 
-                theme(text = element_text(family = "Calibri"))
+                theme(text = element_text(family = "Calibri")) + 
+                theme(text = element_text(family = "Calibri"))+
+                labs(tag = "C") +
+                theme(
+                plot.tag = element_text(face = "bold", size = 16),
+                plot.tag.position = c(0, 1) 
+                )
 
 
 p_sae_mid   <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
                                 "SAE",   "Benefit-Risk assessment: SAE",   "#1B7F1B")+ 
-                theme(text = element_text(family = "Calibri"))
+                theme(text = element_text(family = "Calibri")) +
+                theme(text = element_text(family = "Calibri"))+
+                labs(tag = "D") +
+                theme(
+                plot.tag = element_text(face = "bold", size = 16),
+                plot.tag.position = c(0, 1) 
+                )
 
 
+ggsave("06_Results/brr_travel_daly_mid.pdf", plot = p_daly_mid, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brr_travel_death_mid.pdf", plot = p_death_mid, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brr_travel_sae_mid.pdf", plot = p_sae_mid, width = 10, height = 8, device = cairo_pdf)
 
 
 make_brr_long <- function(psa_df, setting_key) {
@@ -370,14 +390,37 @@ make_brr_long <- function(psa_df, setting_key) {
     filter(is.finite(brr), brr > 0)
 }
 
+
 make_brr_ceac <- function(brr_long,
-                          thresholds = 10^seq(-2, 2, by = 0.05),  # 0.01 ~ 100
-                          group_vars = c("setting", "days", "age_group", "outcome")) {
-  
+                          thresholds = NULL,
+                          group_vars = c("setting", "days", "age_group", "outcome"),
+                          q_low = 0.001,          
+                          q_high = 0.999,        
+                          min_cap = 1e-3,        
+                          max_cap = 1e3,          
+                          step = 0.05             
+) {
   library(dplyr)
   library(tidyr)
   
-  # threshold grid를 붙여서 확률 계산
+  if (is.null(thresholds)) {
+    brr_vals <- brr_long$brr
+    brr_vals <- brr_vals[is.finite(brr_vals) & brr_vals > 0]
+    
+    if (length(brr_vals) == 0) stop("No positive finite BRR values in brr_long.")
+    
+    lo <- as.numeric(quantile(brr_vals, q_low, na.rm = TRUE))
+    hi <- as.numeric(quantile(brr_vals, q_high, na.rm = TRUE))
+    
+    lo <- max(lo, min_cap)
+    hi <- min(hi, max_cap)
+    
+    lo_exp <- floor(log10(lo))
+    hi_exp <- ceiling(log10(hi))
+    
+    thresholds <- 10^seq(lo_exp, hi_exp, by = step)
+  }
+  
   brr_long %>%
     tidyr::crossing(threshold = thresholds) %>%
     group_by(across(all_of(group_vars)), threshold) %>%
@@ -394,15 +437,15 @@ plot_brr_ceac <- function(ceac_df,
                           days_levels = c("7d","14d","30d","90d"),
                           setting_levels = c("Low","Moderate","High")) {
   
-  library(dplyr)
-  library(ggplot2)
-  
+
   df <- ceac_df %>%
     filter(outcome == target_outcome) %>%
     mutate(
       days = factor(days, levels = days_levels),
       setting = factor(setting, levels = setting_levels)
     )
+  
+  legend_title <- if (color_by == "age_group") "Age group" else color_by
   
   ggplot(df, aes(x = threshold, y = p_accept, colour = .data[[color_by]])) +
     geom_line(linewidth = 1) +
@@ -412,12 +455,12 @@ plot_brr_ceac <- function(ceac_df,
       limits = c(0, 1),
       labels = scales::percent_format(accuracy = 1)
     ) +
-    facet_grid(setting ~ days) +   # ✅ rows: Low→Moderate→High, cols: 7d→14d→30d→90d
+    facet_grid(setting ~ days) +   
     labs(
-      x = "BRR threshold (t) [log scale]",
+      x = "BRR threshold (t)",
       y = "Probability(BRR > t)",
       title = paste0("BRR acceptability curve: ", target_outcome),
-      colour = color_by
+      colour = legend_title
     ) +
     theme_bw() +
     theme(panel.grid = element_blank())
@@ -428,14 +471,57 @@ brr_long <- make_brr_long(psa_df, setting_key) %>%
   dplyr::mutate(days = factor(days, levels = c("7d","14d","30d","90d")))
 
 ceac_df <- make_brr_ceac(
-  brr_long,
-  thresholds = 10^seq(-1, 1, by = 0.02)  
+  brr_long
 )
 
-p_daly_ceac <- plot_brr_ceac(ceac_df, target_outcome = "DALY")
-p_death_ceac <- plot_brr_ceac(ceac_df, target_outcome = "Death")
-p_sae_ceac <- plot_brr_ceac(ceac_df, target_outcome = "SAE")
+p_daly_ceac <- plot_brr_ceac(ceac_df, target_outcome = "DALY") +
+  theme(text = element_text(family = "Calibri"))+
+  labs(tag = "E") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 16),
+    plot.tag.position = c(0, 1) 
+  )
 
+p_death_ceac <- plot_brr_ceac(ceac_df, target_outcome = "Death")+ 
+  theme(text = element_text(family = "Calibri")) +
+  labs(tag = "F") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 16),
+    plot.tag.position = c(0, 1) 
+  )
+
+p_sae_ceac <- plot_brr_ceac(ceac_df, target_outcome = "SAE")+ 
+  theme(text = element_text(family = "Calibri")) +
+  labs(tag = "G") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 16),
+    plot.tag.position = c(0, 1) 
+  )
+
+
+
+ggsave("06_Results/brrac_daly_travel.pdf", plot = p_daly_ceac, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brrac_death_travel.pdf", plot = p_death_ceac, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brrac_sae_travel.pdf", plot = p_sae_ceac, width = 10, height = 8, device = cairo_pdf)
+
+
+# summary of ceac_df
+ceac_t1 <- ceac_df %>%
+  filter(abs(log10(threshold)) < 1e-12) %>%   # == threshold=1
+  mutate(
+    days = factor(days, levels = c("7d","14d","30d","90d")),
+    setting = factor(setting, levels = c("Low","Moderate","High"))
+  ) %>%
+  dplyr::select(outcome, setting, age_group, days, p_accept, n, threshold)
+
+ceac_t1_wide <- ceac_t1 %>%
+  mutate(p_fmt = sprintf("%.0f%%", 100 * p_accept)) %>%
+  dplyr::select(outcome, setting, age_group, days, p_fmt, threshold) %>%
+  pivot_wider(names_from = days, values_from = p_fmt) %>%
+  arrange(outcome, setting, age_group)
+
+write_xlsx(ceac_t1_wide, "06_Results/ceac_travel.xlsx")
+write_xlsx(ceac_df, "06_Results/ceac_travel_all.xlsx")
 
 
 ## table

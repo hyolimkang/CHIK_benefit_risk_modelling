@@ -67,7 +67,7 @@ ar_breaks <- seq(0, ceiling(ar_max/5)*5, by = 5)
 ## Pr(BRR>1) CALCULATION 
 ############################################################
 
-brr_state_days_age <- psa_data_mid %>%
+brr_state_days_age <- psa_df %>%
   filter(!is.na(age_group)) %>%
   mutate(days = factor(days, levels = days_levels)) %>%
   group_by(state, age_group, days, draw) %>%
@@ -169,10 +169,12 @@ fig_one <- (p_ar2 + p_pr_cat) +
   plot_annotation(title = "Benefit-risk ratio of traveller vaccination: Pr(BRR(DALY)>1) by travel duration and age group", 
                   theme = theme(plot.title = element_text(size = 10)) 
                   )
-fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal")
+fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal") +
+           theme(text = element_text(family = "Calibri"))
+
 fig_one
 
-ggsave("06_Results/brr_brazil_map_fig_one.pdf", plot = fig_one, width = 8, height = 6)
+ggsave("06_Results/brr_brazil_map_fig_travel.pdf", plot = fig_one, width = 10, height = 6, device = cairo_pdf)
 
 
 ## this is the end of traveller scenario--------------------------------------------------------------
@@ -200,276 +202,66 @@ daly_dat <- draw_level_xy_true %>%
 ############################################################
 ## 2) Summarise Pr(BRR>1) across draws for each state/setting/age
 ############################################################
+pr_breaks <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
+pr_labels <- c("0–20%", "20–40%", "40–60%", "60–80%", "≥80%")
 
-brr_pr <- daly_dat %>%
-  group_by(state_key, setting, AgeCat, draw_id) %>%
+brr_pr_ve_age <- daly_dat %>%
+  group_by(state_key, VE_label, AgeCat, draw_id) %>%
   summarise(brr_draw = mean(brr_daly, na.rm = TRUE), .groups = "drop") %>%
-  group_by(state_key, setting, AgeCat) %>%
-  summarise(
-    pr_gt1 = mean(brr_draw > 1, na.rm = TRUE),
-    .groups = "drop"
-  )
+  group_by(state_key, VE_label, AgeCat) %>%
+  summarise(pr_gt1 = mean(brr_draw > 1, na.rm = TRUE), .groups = "drop")
 
+brr_pr_ve_age <- brr_pr_ve_age %>%
+  mutate(
+    pr_cat = cut(pr_gt1, breaks = pr_breaks, include.lowest = TRUE, labels = pr_labels),
+    pr_cat = forcats::fct_relevel(pr_cat, pr_labels),
+    pr_cat = forcats::fct_na_value_to_level(pr_cat, level = "No data")
+  )
 ############################################################
 ## 3) Categorise probability so readers can choose threshold
 ############################################################
-
-pr_breaks <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
-pr_labels <- c("0–20%", "20–40%", "40–60%", "60–80%", "≥80%")
-
-brr_pr <- brr_pr %>%
-  mutate(
-    pr_cat = cut(
-      pr_gt1,
-      breaks = pr_breaks,
-      include.lowest = TRUE,
-      labels = pr_labels
-    ),
-    pr_cat = forcats::fct_explicit_na(pr_cat, na_level = "No data")
-  )
-
-states_brr_full <- states_base %>%
-  tidyr::crossing(
-    setting = sort(unique(brr_pr$setting)),
-    AgeCat  = factor(age_levels, levels = age_levels)
-  ) %>%
-  left_join(brr_pr, by = c("state_key","setting","AgeCat"))%>%
-  sf::st_as_sf()
-
-bb <- sf::st_bbox(states_base)
-
+ve_levels  <- sort(unique(brr_pr_ve_age$VE_label))
 age_levels <- c("1-11","12-17","18-64","65+")
 
-daly_dat <- draw_level_xy_true %>%
-  filter(outcome == "DALY") %>%
-  mutate(
-    state_key = norm_state(Region),
-    AgeCat    = factor(AgeCat, levels = age_levels),
-    setting   = factor(setting),
-    brr_daly  = dplyr::if_else(is.na(x_daly_10k) | x_daly_10k == 0, NA_real_, y_10k / x_daly_10k)
-  )
-
-# 2) Pr(BRR>1)
-brr_pr <- daly_dat %>%
-  group_by(state_key, setting, AgeCat, draw_id) %>%
-  summarise(brr_draw = mean(brr_daly, na.rm = TRUE), .groups = "drop") %>%
-  group_by(state_key, setting, AgeCat) %>%
-  summarise(pr_gt1 = mean(brr_draw > 1, na.rm = TRUE), .groups = "drop")
-
-# 3) Categorise Pr, keep NA as NA (IMPORTANT)
-pr_breaks <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
-pr_labels <- c("0–20%", "20–40%", "40–60%", "60–80%", "≥80%")
-
-brr_pr <- brr_pr %>%
-  mutate(
-    pr_cat = cut(pr_gt1, breaks = pr_breaks, include.lowest = TRUE, labels = pr_labels)
-  )
-
-# 4) sf-safe expansion (sf on the left)
-states_brr_full <- states_base %>%
-  sf::st_drop_geometry() %>%
+states_pr_full_outbreak <- states_base %>%
   tidyr::crossing(
-    setting = sort(unique(brr_pr$setting)),
-    AgeCat  = factor(age_levels, levels = age_levels)
+    AgeCat   = factor(age_levels, levels = age_levels),
+    VE_label = factor(ve_levels, levels = ve_levels)
   ) %>%
-  left_join(brr_pr, by = c("state_key","setting","AgeCat")) %>%
-  # 2) Re-attach geometry from the sf base
-  left_join(
-    states_base %>% dplyr::select(state_key, geometry),
-    by = "state_key"
-  ) %>%
+  left_join(brr_pr_ve_age, by = c("state_key","VE_label","AgeCat")) %>%
   sf::st_as_sf()
 
-# (optional but recommended) lock bbox to full Brazil
 bb <- sf::st_bbox(states_base)
 
+
 # 5) Plot
-p_brr_cat <- ggplot(states_brr_full) +
+p_brr_cat <- ggplot(states_pr_full_outbreak) +
   geom_sf(aes(fill = pr_cat), colour="white", linewidth=0.01) +
-  facet_grid(setting ~ AgeCat) +
+  facet_grid(VE_label ~ AgeCat) +
   labs(fill = "Pr(BRR(DALY)>1)") +
-  coord_sf(
-    datum = NA,
-    xlim = c(bb["xmin"], bb["xmax"]),
-    ylim = c(bb["ymin"], bb["ymax"])
-  ) +
+  coord_sf(datum = NA) +
   map_theme +
   scale_fill_viridis_d(
     option = "C",
     direction = 1,
-    na.value = "grey80",  # NA states visible in grey
+    na.value = "grey80",
     drop = FALSE
   ) +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom", legend.box = "horizontal")
 
 p_brr_cat
 
 fig_one <- (p_ar2 + p_brr_cat) + 
   plot_layout(widths = c(1.1, 4.5), guides = "collect") + 
-  plot_annotation(title = "Benefit-risk ratio of outbreak response immunisation: Pr(BRR(DALY)>1) by attack rate and age group", 
+  plot_annotation(title = "Benefit-risk ratio of outbreak response immunisation: Pr(BRR(DALY)>1) by vaccine protection mechanism and age group", 
                   theme = theme(plot.title = element_text(size = 10)) 
   )
 
-fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal")
-fig_one
+fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal") + 
+           theme(text = element_text(family = "Calibri"))
+fig_one 
 
-ggsave("06_Results/brr_brazil_map_ori.pdf", plot = fig_one, width = 8, height = 6)
-
-right_column <- (p_pr_cat / p_brr_cat)
-
-## combined figs
-p_brr_cat_no_legend <- p_brr_cat + theme(legend.position = "none")
-
-design <- "
-  ABB
-  ACC
-"
-combined_fig <- wrap_plots(
-  A = p_ar2, 
-  B = p_pr_cat, 
-  C = p_brr_cat_no_legend, 
-  design = design
-) +
-  plot_layout(
-    widths = c(1, 3.5), 
-    guides = "collect"
-  ) +
-  plot_annotation(
-    tag_levels = 'A',
-    title = "Comparative benefit-risk assessment of Ixchiq vaccination strategies",
-    subtitle = "A: Regional attack rate; B: Traveller vaccination; C: Outbreak response vaccination.",
-    theme = theme(
-      plot.title = element_text(size = 12, face = "bold"),
-      plot.subtitle = element_text(size = 10)
-    )
-  ) & 
-  theme(
-    legend.position = "bottom",
-    legend.box = "horizontal",
-    axis.title = element_text(size = 9),
-    axis.text = element_text(size = 8)
-  )
-
-combined_fig
-#### old code -----------------------------------------------------------------
-min_days_state_age <- brr_state_days_age %>%
-  arrange(state, age_group, days) %>%
-  group_by(state, age_group) %>%
-  summarise(
-    min_days = {
-      ok <- as.character(days[pr_gt1 >= thr])
-      if (length(ok) == 0) "Not favourable" else ok[1]
-    },
-    .groups = "drop"
-  ) %>%
-  mutate(
-    min_days_cat = factor(min_days, levels = c(days_levels, "Not favourable")),
-    age_group = factor(age_group, levels = c("1-11","12-17","18-64","65+")) %>% fct_drop()
-  )
-
-states_base <- br_states %>%
-  mutate(state_key = norm_state(NAME_1))
-
-states_ar <- states_base %>%
-  left_join(ar_state %>% mutate(state_key = norm_state(state)), by="state_key")
-
-states_min <- states_base %>%
-  left_join(min_days_state_age %>% mutate(state_key = norm_state(state)), by="state_key")
-
-states_pr <- states_base %>%
-  left_join(brr_state_days_age %>% mutate(state_key = norm_state(state)), by="state_key")
-
-map_theme <- theme_minimal(base_size = 12) +
-  theme(
-    panel.grid = element_blank(),
-    axis.text = element_blank(),
-    axis.title = element_blank(),
-    axis.ticks = element_blank(),
-    plot.margin = margin(2, 2, 2, 2),
-    legend.position = "bottom",
-    legend.box = "horizontal"
-  )
-
-##################
-
-p_min <- ggplot(states_min %>% filter(!is.na(age_group))) +
-  geom_sf(aes(fill = min_days_cat), colour="white", linewidth=0.15) +
-  facet_wrap(~ age_group, nrow = 1) +
-  labs(fill = "Minimum travel days") +
-  coord_sf(datum = NA) +
-  map_theme +
-  scale_fill_discrete(na.value = "grey80") +
-  theme(legend.position = "bottom")  
-
-p_ar2 <- ggplot(states_ar) +
-  geom_sf(aes(fill = AR_bin), colour="white", linewidth=0.15) +
-  labs(fill = "Attack rate (median)") +
-  coord_sf(datum = NA) +
-  map_theme +
-  scale_fill_discrete(na.value = "grey80") +
-  theme(legend.position = "bottom")
-
-p_pr2 <- ggplot(states_pr %>% filter(!is.na(age_group), !is.na(days))) +
-  geom_sf(aes(fill = pr_gt1), colour="white", linewidth=0.15) +
-  facet_grid(days ~ age_group) +
-  labs(fill = "Pr(BRR>1)") +
-  coord_sf(datum = NA) +
-  map_theme +
-  scale_fill_viridis_c(
-    option = "C",
-    limits = c(0, 1),
-    oob = scales::squish,
-    na.value = "grey80",
-    breaks = c(0, 0.25, 0.5, 0.75, 1),
-    labels = scales::percent_format(accuracy = 1)
-  ) +
-  theme(legend.position = "bottom")
+ggsave("06_Results/brr_brazil_map_ori.pdf", plot = fig_one, width = 10, height = 6, device = cairo_pdf)
 
 
-states_ar <- states_ar %>%
-  mutate(AR_pct = 100 * AR_total_med)
-
-ar_max <- max(states_ar$AR_pct, na.rm = TRUE)
-ar_breaks <- seq(0, ceiling(ar_max/5)*5, by = 5)
-
-p_ar2 <- ggplot(states_ar) +
-  geom_sf(aes(fill = AR_pct), colour="white", linewidth=0.15) +
-  labs(fill = "Attack rate (%)") +
-  coord_sf(datum = NA) +
-  map_theme +
-  scale_fill_distiller(
-    palette = "Reds",
-    direction = 1,
-    #breaks = ar_breaks,
-    limits = c(0, max(ar_breaks)),
-    oob = scales::squish,
-    na.value = "grey80",
-    breaks = scales::pretty_breaks(n = 5),
-    labels = function(x) paste0(round(x), "%")
-  ) +
-  theme(legend.position = "bottom")
-
-fig1 <- (p_ar2 + p_min) + 
-  plot_layout(
-    widths = c(1.5, 5),    
-    guides = "collect"
-  ) + 
-  plot_annotation(
-    title = "Minimum recommended travel duration = earliest day where Pr(BRR>1) ≥ 0.8"
-  )
-
-fig1 <- fig1 & theme(legend.position = "bottom", legend.box = "horizontal")
-
-fig1
-
-fig2 <- (p_ar2 + p_pr2) +
-  plot_layout(widths = c(1.1, 4.5), guides = "collect") +
-  plot_annotation(
-    title = paste0("Pr(BRR>1) by travel duration and age group (BRR for DALY)"),
-    theme = theme(plot.title = element_text(size = 10))
-  )
-
-fig2 <- fig2 & theme(legend.position = "bottom", legend.box = "horizontal")
-fig2
-
-ggsave("06_Results/brr_brazil_map_ori.pdf", plot = fig2, width = 7, height = 6)
+#### END-------------------------------------------------------------------------

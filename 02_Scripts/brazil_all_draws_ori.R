@@ -874,7 +874,7 @@ kable(
 # -------------------------------
 summary_long_setting <- draw_level_xy_true %>%
   mutate(
-    setting = factor(setting, levels = c("<5%", "5-10%", "10%+"))
+    setting = factor(setting, levels = c("Low","Moderate","High"))
   )%>%
   group_by(outcome, Scenario, AgeCat, VE_label, setting) %>%
   summarise(
@@ -938,3 +938,320 @@ kable(
   column_spec(1, bold = TRUE) %>%
   column_spec(2, bold = TRUE)
 
+# ------------------------------------------------------------------------------
+# Final Visualization for assessment plot
+# ------------------------------------------------------------------------------
+
+create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
+                           grid_n = 150, pad = 1.10,
+                           show_prop = TRUE) {
+  
+  plot_data <- data %>%
+    filter(outcome == target_outcome)
+  
+  panel_limits <- plot_data %>%
+    group_by(setting, AgeCat) %>%
+    summarise(
+      x_max_raw = max(x_hi, na.rm = TRUE),
+      y_max_raw = max(y_hi, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      x_max_raw = ifelse(is.finite(x_max_raw), x_max_raw, NA_real_),
+      y_max_raw = ifelse(is.finite(y_max_raw), y_max_raw, NA_real_),
+      x_min = 1e-6,
+      y_min = 0,
+      x_max = x_max_raw * pad,
+      y_max = y_max_raw * pad
+    ) %>%
+    filter(!is.na(x_max), !is.na(y_max))
+  
+  bg_grid_specific <- panel_limits %>%
+    rowwise() %>%
+    do({
+      panel <- .
+      x_seq <- seq(panel$x_min, panel$x_max, length.out = grid_n)
+      y_seq <- seq(panel$y_min, panel$y_max, length.out = grid_n)
+      
+      grid_df <- expand.grid(x = x_seq, y = y_seq)
+      
+      grid_df$brr <- grid_df$y / grid_df$x
+      grid_df$log10_brr <- log10(grid_df$brr)
+      
+      grid_df$log10_brr[!is.finite(grid_df$log10_brr)] <- NA_real_
+      grid_df$log10_brr <- pmax(pmin(grid_df$log10_brr, log_max), log_min)
+      
+      grid_df$is_fav <- !is.na(grid_df$log10_brr) & grid_df$log10_brr > 0
+      
+      grid_df$setting <- panel$setting
+      grid_df$AgeCat  <- panel$AgeCat
+      grid_df
+    }) %>%
+    ungroup() %>%
+    filter(!is.na(log10_brr))
+  
+  panel_prop <- bg_grid_specific %>%
+    group_by(setting, AgeCat) %>%
+    summarise(
+      prop_fav = mean(is_fav, na.rm = TRUE),
+      x_min = min(x, na.rm = TRUE),
+      x_max = max(x, na.rm = TRUE),
+      y_min = min(y, na.rm = TRUE),
+      y_max = max(y, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      label = ifelse(prop_fav < 0.005, "BRR>1: <1%",
+                     sprintf("BRR>1: %.0f%%", 100 * prop_fav)),
+      x_lab = x_min + 0.02 * (x_max - x_min),
+      y_lab = y_max - 0.02 * (y_max - y_min)
+    )
+  
+  p <- ggplot() +
+    geom_raster(
+      data = bg_grid_specific,
+      aes(x = x, y = y, fill = log10_brr),
+      alpha = 0.88,
+      interpolate = TRUE
+    ) +
+    scale_fill_gradient2(
+      name = "Benefit–risk ratio",
+      low = "#ca0020", mid = "#f7f7f7", high = "#0571b0",
+      midpoint = 0,
+      limits = c(log_min, log_max),
+      oob = scales::squish,
+      breaks = log_range,
+      labels = brr_labels,
+      na.value = "white"
+    ) +
+    geom_abline(
+      slope = 1, intercept = 0,
+      linetype = "dashed",
+      alpha = 0.55,
+      linewidth = 0.9,
+      colour = "grey35"
+    ) +
+    geom_errorbar(
+      data = plot_data,
+      aes(x = x_med, ymin = y_lo, ymax = y_hi, color = outcome),
+      width = 0, linewidth = 0.3
+    ) +
+    geom_errorbarh(
+      data = plot_data,
+      aes(y = y_med, xmin = x_lo, xmax = x_hi, color = outcome),
+      height = 0, linewidth = 0.3
+    ) +
+    geom_point(
+      data = plot_data,
+      aes(x = x_med, y = y_med, shape = VE_label, color = outcome),
+      size = 2.9,
+      fill = "white",
+      stroke = 1.1,
+      alpha = 0.95
+    )
+  
+  # if (show_prop) {
+  #   p <- p + geom_label(
+  #     data = panel_prop,
+  #     aes(x = x_lab, y = y_lab, label = label),
+  #     inherit.aes = FALSE,
+  #     hjust = 0, vjust = 1,
+  #     size = 3,
+  #     fill = "white",
+  #     alpha = 0.85,
+  #     colour = "black",
+  #     label.size = 0.25,
+  #     label.padding = unit(0.10, "lines")
+  #   )
+  # }
+  
+  p +
+    facet_wrap(~ setting + AgeCat, scales = "free", ncol = 4) +
+    scale_color_manual(
+      name = "Outcome",
+      values = c("SAE" = "#1B7F1B", "Death" = "#B8860B", "DALY" = "#A23B72")
+    ) +
+    scale_shape_manual(
+      name = "Vaccine protection mechanism",
+      values = c("Disease blocking only" = 21,
+                 "Disease and infection blocking" = 24)
+    ) +
+    scale_x_continuous(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0)) +
+    labs(
+      title = paste("Benefit–risk Assessment:", target_outcome),
+      x = "Vaccine attributable adverse outcome (per 10,000 vaccinated individuals)",
+      y = "Outcomes averted by vaccination (per 10,000 vaccinated individuals)"
+    ) +
+    theme_bw() +
+    theme(
+      panel.grid = element_blank(),
+      panel.border = element_rect(linewidth = 0.6),
+      strip.background = element_rect(fill = "gray95", linewidth = 0.6),
+      axis.title = element_text(size = 11),
+      axis.text  = element_text(size = 9),
+      legend.position = "right",
+      legend.title = element_text(size = 10),
+      legend.text  = element_text(size = 9),
+      panel.spacing = unit(0.35, "lines")
+    )
+}
+
+# by setting
+plot_sae   <- create_br_plot(summary_long_setting, "SAE")+ 
+  theme(text = element_text(family = "Calibri")) +
+  theme(text = element_text(family = "Calibri"))+
+  labs(tag = "D") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 16),
+    plot.tag.position = c(0, 1) 
+  ) 
+
+plot_death <- create_br_plot(summary_long_setting, "Death")+ 
+  theme(text = element_text(family = "Calibri")) +
+  theme(text = element_text(family = "Calibri"))+
+  labs(tag = "C") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 16),
+    plot.tag.position = c(0, 1) 
+  ) 
+
+plot_daly  <- create_br_plot(summary_long_setting, "DALY")+ 
+  theme(text = element_text(family = "Calibri")) +
+  theme(text = element_text(family = "Calibri"))+
+  labs(tag = "B") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 16),
+    plot.tag.position = c(0, 1) 
+  ) 
+
+# national
+plot_sae   <- create_br_plot(summary_long_true, "SAE")
+plot_death <- create_br_plot(summary_long_true, "Death")
+plot_daly  <- create_br_plot(summary_long_true, "DALY")
+
+plot_daly
+plot_sae
+plot_death
+
+
+ggsave("06_Results/brr_daly_ori_setting.pdf", plot = plot_daly, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brr_death_ori_setting.pdf", plot = plot_death, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brr_sae_ori_setting.pdf", plot = plot_sae, width = 10, height = 8, device = cairo_pdf)
+
+# ------------------------------------------------------------------------------
+# Final Visualization for BRRAC
+# ------------------------------------------------------------------------------
+
+make_brr_ceac_outbreak <- function(brr_long,
+                                   thresholds = 10^seq(-1, 1, by = 0.02),
+                                   group_vars = c("setting","VE_label","AgeCat","outcome")) {
+  brr_long %>%
+    tidyr::crossing(threshold = thresholds) %>%
+    group_by(across(all_of(group_vars)), threshold) %>%
+    summarise(
+      p_accept = mean(brr > threshold),
+      .groups = "drop"
+    )
+}
+
+plot_brr_ceac_outbreak_ve <- function(ceac_df,
+                                      target_outcome = "DALY",
+                                      setting_levels = c("Low","Moderate","High"),
+                                      age_levels = c("1-11","12-17","18-64","65+"),
+                                      ve_levels = NULL) {
+  
+  df <- ceac_df %>%
+    filter(outcome == target_outcome) %>%
+    mutate(
+      setting = factor(setting, levels = setting_levels),
+      AgeCat  = factor(AgeCat,  levels = age_levels)
+    )
+  
+  if (!is.null(ve_levels)) {
+    df <- df %>% mutate(VE_label = factor(VE_label, levels = ve_levels))
+  }
+  
+  ggplot(df, aes(x = threshold, y = p_accept, colour = AgeCat)) +
+    geom_line(linewidth = 1) +
+    geom_vline(xintercept = 1, linetype = "dashed", alpha = 0.6) +
+    scale_x_log10() +
+    scale_y_continuous(limits = c(0, 1),
+                       labels = scales::percent_format(accuracy = 1)) +
+    facet_grid(setting ~ VE_label) +
+    labs(
+      x = "BRR threshold (t)",
+      y = "Probability(BRR > t)",
+      title = paste0("BRR acceptability curve: ", target_outcome),
+      colour = "Age group"
+    ) +
+    theme_bw() +
+    theme(panel.grid = element_blank())
+}
+
+brr_long_ob <- draw_level_xy_true %>%
+  mutate(
+    brr = y_10k / pmax(x_10k, 1e-12),
+    outcome = recode(outcome, "sae"="SAE","death"="Death","daly"="DALY"),
+    setting = factor(setting, levels = c("Low","Moderate","High")),
+    AgeCat  = factor(AgeCat, levels = c("1-11","12-17","18-64","65+"))
+  ) %>%
+  filter(is.finite(brr), brr > 0) %>%
+  transmute(Region, setting, VE_label, AgeCat, outcome, brr)
+
+brr_max <- quantile(brr_long_ob$brr, 0.999, na.rm = TRUE)  # 99.9%
+brr_min <- quantile(brr_long_ob$brr, 0.001, na.rm = TRUE)  # 0.1%
+
+lo_exp <- floor(log10(max(0.01, brr_min)))
+hi_exp <- ceiling(log10(min(1e3, brr_max)))
+
+thresholds_auto <- 10^seq(lo_exp, hi_exp, by = 0.02)
+thresholds_auto
+
+ceac_ob <- make_brr_ceac_outbreak(brr_long_ob,
+                                  thresholds = thresholds_auto)
+
+
+p_daly_ceac_outbreak <- plot_brr_ceac_outbreak_ve(ceac_ob, "DALY")+ 
+  theme(text = element_text(family = "Calibri")) +
+  labs(tag = "E") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 16),
+    plot.tag.position = c(0, 1) 
+  )
+
+p_death_ceac_outbreak <- plot_brr_ceac_outbreak_ve(ceac_ob, "Death")+ 
+  theme(text = element_text(family = "Calibri")) +
+  labs(tag = "F") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 16),
+    plot.tag.position = c(0, 1) 
+  )
+
+p_sae_ceac_outbreak <- plot_brr_ceac_outbreak_ve(ceac_ob, "SAE")+ 
+  theme(text = element_text(family = "Calibri")) +
+  labs(tag = "G") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 16),
+    plot.tag.position = c(0, 1) 
+  )
+
+ggsave("06_Results/brrac_daly_ori.pdf", plot = p_daly_ceac_outbreak, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brrac_death_ori.pdf", plot = p_death_ceac_outbreak, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brrac_sae_ori.pdf", plot = p_sae_ceac_outbreak, width = 10, height = 8, device = cairo_pdf)
+
+
+write.csv(ceac_ob, file = "06_Results/ceac_ob.csv")
+
+
+ceac_t1 <- ceac_ob %>%
+  filter(abs(log10(threshold)) < 1e-12) %>%   # == threshold=1
+  dplyr::select(outcome, setting, AgeCat, p_accept, threshold, VE_label)
+
+ceac_t1_wide <- ceac_t1 %>%
+  mutate(p_fmt = sprintf("%.0f%%", 100 * p_accept)) %>%
+  dplyr::select(outcome, setting, AgeCat, threshold, VE_label, p_fmt) %>%
+  tidyr::pivot_wider(names_from = VE_label, values_from = p_fmt)
+
+write_xlsx(ceac_t1_wide, "06_Results/ceac_travel.xlsx")
+write_xlsx(ceac_df, "06_Results/ceac_travel_all.xlsx")

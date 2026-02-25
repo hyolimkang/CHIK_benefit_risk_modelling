@@ -612,6 +612,7 @@ save(all_draws_ix_true, file = "01_Data/all_draws_ix_true.RData")
 save(all_draws_hosp_true, file = "01_Data/all_draws_hosp_true.RData")
 save(all_draws_daly_true, file = "01_Data/all_draws_daly_true.RData")
 save(all_draws_fatal_true, file = "01_Data/all_draws_fatal_true.RData")
+save(all_draws_sae_true, file = "01_Data/all_draws_sae_true.RData")
 
 
 # add setting key variable

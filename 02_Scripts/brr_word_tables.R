@@ -1,7 +1,7 @@
 ### traveller 
 conflicted::conflict_prefer("align", "flextable")
 
-ft <- flextable(ar_table_wide) %>%
+ft <- flextable(ar_table_wide2) %>%
   set_header_labels(
     outcome     = "Outcome",
     ar_category = "Setting",
@@ -50,7 +50,7 @@ print(doc, target = "06_Results/BRR_table_ori.docx")
 
 ## ori by setting
 ### ori
-brr_table_wide_setting2 <- brr_table_wide_setting %>%
+brr_table_wide_setting2 <- brr_table_wide_setting2 %>%
   arrange(Outcome, Setting, `Age group`)
 
 ft_brr <- flextable(brr_table_wide_setting2) %>%

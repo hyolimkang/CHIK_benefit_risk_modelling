@@ -197,6 +197,20 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
 
   g <- rlang::sym(group_var)
   
+  x_label <- dplyr::case_when(
+    target_outcome == "DALY"  ~ "DALYs attributable to vaccination (per 10,000 vaccinated individuals)",
+    target_outcome == "SAE"   ~ "SAEs attributable to vaccination (per 10,000 vaccinated individuals)",
+    target_outcome == "Death" ~ "Deaths attributable to vaccination (per 10,000 vaccinated individuals)",
+    TRUE ~ "Vaccine attributable adverse outcome (per 10,000 vaccinated individuals)"
+  )
+  
+  y_label <- dplyr::case_when(
+    target_outcome == "DALY"  ~ "DALYs averted by vaccination (per 10,000 vaccinated individuals)",
+    target_outcome == "SAE"   ~ "SAEs averted by vaccination (per 10,000 vaccinated individuals)",
+    target_outcome == "Death" ~ "Deaths averted by vaccination (per 10,000 vaccinated individuals)",
+    TRUE ~ "Vaccine averted adverse outcome (per 10,000 vaccinated individuals)"
+  )
+  
   if (!(group_var %in% names(br_summarized))) {
     stop("Column `", group_var, "` is not found in br_summarized.")
   }
@@ -302,8 +316,8 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
     scale_y_continuous(expand = c(0, 0)) +
     labs(
       title = title_text,
-      x = "Vaccine attributable adverse outcome (per 10,000 vaccinated individuals)",
-      y = "Outcomes averted by vaccination (per 10,000 vaccinated individuals)"
+      x = x_label,
+      y = y_label
     ) +
     theme_bw() +
     theme(
@@ -330,10 +344,14 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
 p_daly_mid  <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
                                 "DALY", "Benefit-Risk assessment: DALY", "#A23B72") + 
                 theme(text = element_text(family = "Calibri"))+
-                labs(tag = "B") +
+                labs(tag = "B",
+                     caption = "Note: Background colour indicates BRR = (DALYs averted by vaccination)/(DALYs attributable to vaccination) = y/x; dashed line indicates BRR = 1 (y = x).") +
                 theme(
                 plot.tag = element_text(face = "bold", size = 16),
-                plot.tag.position = c(0, 1) 
+                plot.tag.position = c(0, 1),
+                plot.caption = element_text(hjust = 0, margin = margin(l = -8)),
+                plot.caption.position = "plot",
+                plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 5.5)  
                  )
 
 
@@ -341,10 +359,14 @@ p_death_mid <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
                                 "Death", "Benefit-Risk assessment: Death", "#B8860B")+ 
                 theme(text = element_text(family = "Calibri")) + 
                 theme(text = element_text(family = "Calibri"))+
-                labs(tag = "C") +
+                labs(tag = "C",
+                     caption = "Note: Background colour indicates BRR = (Deaths averted by vaccination)/(Deaths attributable to vaccination) = y/x; dashed line indicates BRR = 1 (y = x).") +
                 theme(
                 plot.tag = element_text(face = "bold", size = 16),
-                plot.tag.position = c(0, 1) 
+                plot.tag.position = c(0, 1),
+                plot.caption = element_text(hjust = 0, margin = margin(l = -8)),
+                plot.caption.position = "plot",
+                plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 12)   
                 )
 
 
@@ -352,10 +374,14 @@ p_sae_mid   <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
                                 "SAE",   "Benefit-Risk assessment: SAE",   "#1B7F1B")+ 
                 theme(text = element_text(family = "Calibri")) +
                 theme(text = element_text(family = "Calibri"))+
-                labs(tag = "D") +
+                labs(tag = "D",
+                     caption = "Note: Background colour indicates BRR = (SAEs averted by vaccination)/(SAEs attributable to vaccination) = y/x; dashed line indicates BRR = 1 (y = x).") +
                 theme(
                 plot.tag = element_text(face = "bold", size = 16),
-                plot.tag.position = c(0, 1) 
+                plot.tag.position = c(0, 1),
+                plot.caption = element_text(hjust = 0, margin = margin(l = -8)),
+                plot.caption.position = "plot",
+                plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 5.5)  
                 )
 
 
@@ -454,8 +480,8 @@ plot_brr_ceac <- function(ceac_df,
     ) +
     facet_grid(setting ~ days) +   
     labs(
-      x = "BRR threshold (t)",
-      y = "Probability(BRR > t)",
+      x = "Benefit-risk ratio (BRR) threshold (t)",
+      y = "Probability (BRR > t)",
       title = paste0("BRR acceptability curve: ", target_outcome),
       colour = legend_title
     ) +
@@ -470,6 +496,33 @@ brr_long <- make_brr_long(psa_df, setting_key) %>%
 ceac_df <- make_brr_ceac(
   brr_long
 )
+
+pr_ge1_tbl <- ceac_df %>%
+  filter(threshold == 1) %>%
+  transmute(
+    setting, days, age_group, outcome,
+    pr_brr_ge_1 = p_accept,
+    n
+  )
+
+pr_gt1_wide <- ceac_df %>%
+  mutate(
+    setting   = factor(setting, levels = c("Low","Moderate","High")),
+    days      = factor(days, levels = c("7d","14d","30d","90d")),
+    age_group = ifelse(age_group == "65", "65+", age_group)
+  ) %>%
+  filter(threshold == 1) %>%
+  transmute(outcome, setting, age_group, days,
+            pr_brr_gt_1 = p_accept) %>%
+  mutate(
+    pr_fmt = sprintf("%.1f%%", 100 * pr_brr_gt_1)   
+  ) %>%
+  dplyr::select(-pr_brr_gt_1) %>%
+  pivot_wider(
+    names_from  = days,
+    values_from = pr_fmt,
+    names_glue  = "{days}_Pr(BRR>1)"
+  )
 
 p_daly_ceac <- plot_brr_ceac(ceac_df, target_outcome = "DALY") +
   theme(text = element_text(family = "Calibri"))+
@@ -494,8 +547,6 @@ p_sae_ceac <- plot_brr_ceac(ceac_df, target_outcome = "SAE")+
     plot.tag = element_text(face = "bold", size = 16),
     plot.tag.position = c(0, 1) 
   )
-
-
 
 ggsave("06_Results/brrac_daly_travel.pdf", plot = p_daly_ceac, width = 10, height = 8, device = cairo_pdf)
 ggsave("06_Results/brrac_death_travel.pdf", plot = p_death_ceac, width = 10, height = 8, device = cairo_pdf)
@@ -559,6 +610,15 @@ ar_table_wide <- ar_summary_all %>%
   arrange(outcome, setting, age_group)
 
 idx_outcome <- table(ar_table_wide$outcome)
+
+ar_table_wide2 <- ar_table_wide %>%
+  left_join(pr_gt1_wide, by = c("outcome","setting","age_group"))
+
+ar_table_wide2 <- ar_table_wide2 %>%
+  relocate(`7d_Pr(BRR>1)`,  .after = `7d`)  %>%
+  relocate(`14d_Pr(BRR>1)`, .after = `14d`) %>%
+  relocate(`30d_Pr(BRR>1)`, .after = `30d`) %>%
+  relocate(`90d_Pr(BRR>1)`, .after = `90d`)
 
 kable(
   ar_table_wide,

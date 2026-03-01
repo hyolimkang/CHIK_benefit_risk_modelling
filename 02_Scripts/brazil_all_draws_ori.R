@@ -765,7 +765,7 @@ draw_level_xy_true <- joint_true %>%
     
     # compute input units for compute_daly_one(): per 10k
     sae_10k        = p_sae   * 1e4,
-    deaths_sae_10k = p_death * 1e4
+    deaths_10k = p_death * 1e4
   ) %>%
   rowwise() %>%
   mutate(
@@ -774,7 +774,7 @@ draw_level_xy_true <- joint_true %>%
       compute_daly_one(
         age_group      = AgeCat,
         sae_10k        = sae_10k,
-        deaths_sae_10k = deaths_sae_10k,
+        deaths_10k = deaths_10k,
         draw_pars = as.list(list(
           le_lost_1_11 = le_lost_1_11, le_lost_12_17 = le_lost_12_17,
           le_lost_18_64 = le_lost_18_64, le_lost_65 = le_lost_65,
@@ -789,7 +789,7 @@ draw_level_xy_true <- joint_true %>%
     # x-axis (excess adverse outcomes) per 10k vaccinated
     x_10k = case_when(
       outcome == "SAE"   ~ sae_10k,
-      outcome == "Death" ~ deaths_sae_10k,
+      outcome == "Death" ~ deaths_10k,
       outcome == "DALY"  ~ x_daly_10k,
       TRUE ~ NA_real_
     )
@@ -952,6 +952,20 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
                            grid_n = 150, pad = 1.10,
                            show_prop = TRUE) {
   
+  x_label <- dplyr::case_when(
+    target_outcome == "DALY"  ~ "DALYs attributable to vaccination (per 10,000 vaccinated individuals)",
+    target_outcome == "SAE"   ~ "SAEs attributable to vaccination (per 10,000 vaccinated individuals)",
+    target_outcome == "Death" ~ "Deaths attributable to vaccination (per 10,000 vaccinated individuals)",
+    TRUE ~ "Vaccine attributable adverse outcome (per 10,000 vaccinated individuals)"
+  )
+  
+  y_label <- dplyr::case_when(
+    target_outcome == "DALY"  ~ "DALYs averted by vaccination (per 10,000 vaccinated individuals)",
+    target_outcome == "SAE"   ~ "SAEs averted by vaccination (per 10,000 vaccinated individuals)",
+    target_outcome == "Death" ~ "Deaths averted by vaccination (per 10,000 vaccinated individuals)",
+    TRUE ~ "Vaccine averted adverse outcome (per 10,000 vaccinated individuals)"
+  )
+  
   plot_data <- data %>%
     filter(outcome == target_outcome)
   
@@ -1086,8 +1100,8 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
     scale_y_continuous(expand = c(0, 0)) +
     labs(
       title = paste("Benefit–risk Assessment:", target_outcome),
-      x = "Vaccine attributable adverse outcome (per 10,000 vaccinated individuals)",
-      y = "Outcomes averted by vaccination (per 10,000 vaccinated individuals)"
+      x = x_label,
+      y = y_label
     ) +
     theme_bw() +
     theme(
@@ -1106,28 +1120,39 @@ create_br_plot <- function(data, target_outcome, log_min = -1, log_max = 3,
 # by setting
 plot_sae   <- create_br_plot(summary_long_setting, "SAE")+ 
   theme(text = element_text(family = "Calibri")) +
-  labs(tag = "D") +
-  theme(
+  labs(tag = "D",
+       caption = "Note: Background colour indicates BRR = (SAEs averted by vaccination)/(SAEs attributable to vaccination) = y/x; dashed line indicates BRR = 1 (y = x).") +
+ theme(
     plot.tag = element_text(face = "bold", size = 16),
-    plot.tag.position = c(0, 1) 
-  ) 
+    plot.tag.position = c(0, 1),
+    plot.caption = element_text(hjust = 0, margin = margin(l = -8)),
+    plot.caption.position = "plot",
+    plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 12)  
+  )
 
 plot_death <- create_br_plot(summary_long_setting, "Death")+ 
   theme(text = element_text(family = "Calibri")) +
-  labs(tag = "C") +
+  labs(tag = "C",
+       caption = "Note: Background colour indicates BRR = (Deaths averted by vaccination)/(Deaths attributable to vaccination) = y/x; dashed line indicates BRR = 1 (y = x).") +
   theme(
     plot.tag = element_text(face = "bold", size = 16),
-    plot.tag.position = c(0, 1) 
+    plot.tag.position = c(0, 1),
+    plot.caption = element_text(hjust = 0, margin = margin(l = -8)),
+    plot.caption.position = "plot",
+    plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 12)  
   ) 
 
 plot_daly  <- create_br_plot(summary_long_setting, "DALY")+ 
   theme(text = element_text(family = "Calibri")) +
-  labs(tag = "B") +
+  labs(tag = "B",
+       caption = "Note: Background colour indicates BRR = (DALYs averted by vaccination)/(DALYs attributable to vaccination) = y/x; dashed line indicates BRR = 1 (y = x).") +
   theme(
     plot.tag = element_text(face = "bold", size = 16),
-    plot.tag.position = c(0, 1) 
-  ) 
-
+    plot.tag.position = c(0, 1),
+    plot.caption = element_text(hjust = 0, margin = margin(l = -8)),
+    plot.caption.position = "plot",
+    plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 12)  
+  )
 # national
 #plot_sae   <- create_br_plot(summary_long_true, "SAE")
 #plot_death <- create_br_plot(summary_long_true, "Death")
@@ -1183,8 +1208,8 @@ plot_brr_ceac_outbreak_ve <- function(ceac_df,
                        labels = scales::percent_format(accuracy = 1)) +
     facet_grid(setting ~ VE_label) +
     labs(
-      x = "BRR threshold (t)",
-      y = "Probability(BRR > t)",
+      x = "Benefit-risk ratio (BRR) threshold (t)",
+      y = "Probability (BRR > t)",
       title = paste0("BRR acceptability curve: ", target_outcome),
       colour = "Age group"
     ) +
@@ -1255,5 +1280,30 @@ ceac_t1_wide <- ceac_t1 %>%
   mutate(p_fmt = sprintf("%.0f%%", 100 * p_accept)) %>%
   dplyr::select(outcome, setting, AgeCat, threshold, VE_label, p_fmt) %>%
   tidyr::pivot_wider(names_from = VE_label, values_from = p_fmt)
+
+pr_gt1 <- ceac_ob %>%
+  filter(abs(log10(threshold)) < 1e-12) %>%   # threshold=1
+  transmute(outcome, setting, AgeCat, VE_label,
+            pr_brr_gt_1 = p_accept)
+
+pr_gt1_wide_setting <- ceac_ob %>%
+  filter(abs(log10(threshold)) < 1e-12) %>%  # threshold == 1
+  transmute(
+    Outcome   = outcome,
+    Setting   = setting,
+    `Age group` = AgeCat,
+    VE_col    = VE_label,
+    pr_fmt    = sprintf("%.0f%%", 100 * p_accept)  # Pr(BRR>1)라고 가정
+  ) %>%
+  pivot_wider(
+    names_from  = VE_col,
+    values_from = pr_fmt,
+    names_glue  = "{VE_col} Pr(BRR>1)"
+  )
+
+brr_table_wide_setting2 <- brr_table_wide_setting %>%
+  left_join(pr_gt1_wide_setting, by = c("Outcome","Setting","Age group")) %>%
+  relocate(`Disease blocking only Pr(BRR>1)`, .after = `Disease blocking only`) %>%
+  relocate(`Disease and infection blocking Pr(BRR>1)`, .after = `Disease and infection blocking`)
 
 write_xlsx(ceac_t1_wide, "06_Results/ceac_ori.xlsx")

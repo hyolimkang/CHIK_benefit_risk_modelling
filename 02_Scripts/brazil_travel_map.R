@@ -6,7 +6,7 @@ br_states <- st_read(file.path(shp_dir, "gadm41_BRA_1.shp"), quiet = TRUE)
 ############################################################
 
 days_levels <- c("7d","14d","30d","90d")
-target_outcome <- "brr_daly"
+target_outcome <- "brr_sae"
 
 # Threshold is no longer used for "minimum days" map
 # because we will show categorised Pr(BRR>1) and let readers decide.
@@ -45,7 +45,7 @@ fmt_pct <- function(x, digits = 1){
 ## ATTACK RATE 
 ############################################################
 
-ar_state <- psa_data_mid %>%
+ar_state <- psa_df %>%
   group_by(state, draw) %>%
   summarise(AR_total_draw = mean(AR_total, na.rm=TRUE), .groups="drop") %>%
   group_by(state) %>%
@@ -142,7 +142,8 @@ p_ar2 <- ggplot(states_ar) +
     breaks = scales::pretty_breaks(n = 5),
     labels = function(x) paste0(round(x), "%")
   ) +
-  theme(legend.position = "bottom", legend.box = "horizontal") 
+  theme(legend.position = "bottom", legend.box = "horizontal") +
+  theme(plot.margin = margin(t = 2, r = -25, b = 2, l = 2, unit = "mm"))
 
 
 # UPDATED: Pr(BRR>1) map as categorical bins
@@ -156,17 +157,19 @@ p_pr_cat <- ggplot(states_pr_full) +
     option = "C",
     direction = 1,
     na.value = "grey80",   # NA states remain visible in grey for geographic context
-    drop = FALSE
+    #drop = FALSE,
+    drop = TRUE
   ) +
-  theme(legend.position = "bottom", legend.box = "horizontal") 
+  theme(legend.position = "bottom", legend.box = "horizontal")+
+  theme(plot.margin = margin(t = 2, r = 2, b = 2, l = -25, unit = "mm"))
 ############################################################
 ## FINAL: SINGLE FIGURE
 ## (Remove the "minimum travel days" figure and keep one combined figure)
 ############################################################
 
 fig_one <- (p_ar2 + p_pr_cat) + 
-  plot_layout(widths = c(1.1, 4.5), guides = "collect") + 
-  plot_annotation(title = "Benefit-risk ratio of traveller vaccination: Pr(BRR(DALY)>1) by travel duration and age group", 
+  plot_layout(widths = c(1.1, 4.5), guides = "keep") + 
+  plot_annotation(title = "Benefit-risk ratio of traveller vaccination: Pr(BRR(SAE)>1) by travel duration and age group", 
                   theme = theme(plot.title = element_text(size = 10)) 
                   )
 fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal") +
@@ -174,7 +177,7 @@ fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal"
 
 fig_one
 
-ggsave("06_Results/brr_brazil_map_fig_travel.pdf", plot = fig_one, width = 10, height = 6, device = cairo_pdf)
+ggsave("06_Results/brr_brazil_map_fig_travel_sae.pdf", plot = fig_one, width = 11, height = 8, device = cairo_pdf)
 
 
 ## this is the end of traveller scenario--------------------------------------------------------------
@@ -184,7 +187,7 @@ ggsave("06_Results/brr_brazil_map_fig_travel.pdf", plot = fig_one, width = 10, h
 age_levels <- c("1-11","12-17","18-64","65+")
 
 daly_dat <- draw_level_xy_true %>%
-  filter(outcome == "DALY") %>%   # IMPORTANT: subset to DALY only
+  filter(outcome == "SAE") %>%   # IMPORTANT: subset to DALY only
   mutate(
     state_key = norm_state(Region),
     AgeCat    = factor(AgeCat, levels = age_levels),
@@ -192,10 +195,10 @@ daly_dat <- draw_level_xy_true %>%
   ) %>%
   # Compute BRR safely (avoid division by 0)
   mutate(
-    brr_daly = dplyr::if_else(
-      is.na(x_daly_10k) | x_daly_10k == 0,
+    brr_sae = dplyr::if_else(
+      is.na(sae_10k) | sae_10k == 0,
       NA_real_,
-      y_10k / x_daly_10k
+      y_10k / sae_10k
     )
   )
 
@@ -207,7 +210,7 @@ pr_labels <- c("0–20%", "20–40%", "40–60%", "60–80%", "≥80%")
 
 brr_pr_ve_age <- daly_dat %>%
   group_by(state_key, VE_label, AgeCat, draw_id) %>%
-  summarise(brr_draw = mean(brr_daly, na.rm = TRUE), .groups = "drop") %>%
+  summarise(brr_draw = mean(brr_sae, na.rm = TRUE), .groups = "drop") %>%
   group_by(state_key, VE_label, AgeCat) %>%
   summarise(pr_gt1 = mean(brr_draw > 1, na.rm = TRUE), .groups = "drop")
 
@@ -233,12 +236,14 @@ states_pr_full_outbreak <- states_base %>%
 
 bb <- sf::st_bbox(states_base)
 
+states_pr_full_outbreak$pr_cat <- droplevels(states_pr_full_outbreak$pr_cat)
+
 
 # 5) Plot
 p_brr_cat <- ggplot(states_pr_full_outbreak) +
   geom_sf(aes(fill = pr_cat), colour="white", linewidth=0.01) +
   facet_grid(VE_label ~ AgeCat) +
-  labs(fill = "Pr(BRR(DALY)>1)") +
+  labs(fill = "Pr(BRR(SAE)>1)") +
   coord_sf(datum = NA) +
   map_theme +
   scale_fill_viridis_d(
@@ -247,13 +252,14 @@ p_brr_cat <- ggplot(states_pr_full_outbreak) +
     na.value = "grey80",
     drop = FALSE
   ) +
-  theme(legend.position = "bottom", legend.box = "horizontal")
+  theme(legend.position = "bottom", legend.box = "horizontal")+
+  theme(plot.margin = margin(t = 2, r = 2, b = 2, l = 0, unit = "mm"))
 
 p_brr_cat
 
 fig_one <- (p_ar2 + p_brr_cat) + 
-  plot_layout(widths = c(1.1, 4.5), guides = "collect") + 
-  plot_annotation(title = "Benefit-risk ratio of outbreak response immunisation: Pr(BRR(DALY)>1) by vaccine protection mechanism and age group", 
+  plot_layout(widths = c(1.1, 4.5), guides = "keep") + 
+  plot_annotation(title = "Benefit-risk ratio of outbreak response immunisation: Pr(BRR(SAE)>1) by vaccine protection mechanism and age group", 
                   theme = theme(plot.title = element_text(size = 10)) 
   )
 
@@ -261,7 +267,8 @@ fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal"
            theme(text = element_text(family = "Calibri"))
 fig_one 
 
-ggsave("06_Results/brr_brazil_map_ori.pdf", plot = fig_one, width = 10, height = 6, device = cairo_pdf)
+ggsave("06_Results/brr_brazil_map_ori_sae.pdf", plot = fig_one, width = 12, height = 6, device = cairo_pdf)
 
+ 
 
 #### END-------------------------------------------------------------------------

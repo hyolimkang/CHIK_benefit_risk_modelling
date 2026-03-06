@@ -6,7 +6,7 @@ br_states <- st_read(file.path(shp_dir, "gadm41_BRA_1.shp"), quiet = TRUE)
 ############################################################
 
 days_levels <- c("7d","14d","30d","90d")
-target_outcome <- "brr_sae"
+target_outcome <- "brr_daly"
 
 # Threshold is no longer used for "minimum days" map
 # because we will show categorised Pr(BRR>1) and let readers decide.
@@ -143,14 +143,14 @@ p_ar2 <- ggplot(states_ar) +
     labels = function(x) paste0(round(x), "%")
   ) +
   theme(legend.position = "bottom", legend.box = "horizontal") +
-  theme(plot.margin = margin(t = 2, r = -25, b = 2, l = 2, unit = "mm"))
+  theme(plot.margin =  ggplot2::margin(t = 2, r = -25, b = 2, l = 2, unit = "mm"))
 
 
 # UPDATED: Pr(BRR>1) map as categorical bins
 p_pr_cat <- ggplot(states_pr_full) +
   geom_sf(aes(fill = pr_cat), colour="white", linewidth=0.01) +  # thinner borders
   facet_grid(days ~ age_group) +
-  labs(fill = "Pr(BRR>1)") +
+  labs(fill = "Pr(BRR(DALY)>1)") +
   coord_sf(datum = NA) +
   map_theme +
   scale_fill_viridis_d(
@@ -161,7 +161,7 @@ p_pr_cat <- ggplot(states_pr_full) +
     drop = TRUE
   ) +
   theme(legend.position = "bottom", legend.box = "horizontal")+
-  theme(plot.margin = margin(t = 2, r = 2, b = 2, l = -25, unit = "mm"))
+  theme(plot.margin =  ggplot2::margin(t = 2, r = 2, b = 2, l = -25, unit = "mm"))
 ############################################################
 ## FINAL: SINGLE FIGURE
 ## (Remove the "minimum travel days" figure and keep one combined figure)
@@ -169,15 +169,13 @@ p_pr_cat <- ggplot(states_pr_full) +
 
 fig_one <- (p_ar2 + p_pr_cat) + 
   plot_layout(widths = c(1.1, 4.5), guides = "keep") + 
-  plot_annotation(title = "Benefit-risk ratio of traveller vaccination: Pr(BRR(SAE)>1) by travel duration and age group", 
-                  theme = theme(plot.title = element_text(size = 10)) 
-                  )
+  plot_annotation(theme = theme(plot.title = element_text(size = 10)))
 fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal") +
            theme(text = element_text(family = "Calibri"))
 
 fig_one
 
-ggsave("06_Results/brr_brazil_map_fig_travel_sae.pdf", plot = fig_one, width = 11, height = 8, device = cairo_pdf)
+ggsave("06_Results/brr_brazil_map_fig_travel_daly.pdf", plot = fig_one, width = 11, height = 8, device = cairo_pdf)
 
 
 ## this is the end of traveller scenario--------------------------------------------------------------

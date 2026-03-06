@@ -1208,7 +1208,7 @@ plot_brr_ceac_outbreak_ve <- function(ceac_df,
                        labels = scales::percent_format(accuracy = 1)) +
     facet_grid(setting ~ VE_label) +
     labs(
-      x = "Benefit-risk ratio (BRR) threshold (t)",
+      x = "Benefit-risk ratio (BRR)",
       y = "Probability (BRR > t)",
       title = paste0("BRR acceptability curve: ", target_outcome),
       colour = "Age group"

@@ -152,11 +152,17 @@ AR_by_state <- list(
 
 
 ## check distribution empirically
+p <- 
 ggplot(AR_draw_by_region, aes(x = AR_S0)) +
   geom_histogram(aes(y = after_stat(density)), bins = 30) +
+  theme(text = element_text(family = "Calibri")) +
   geom_density(linewidth = 0.8) +
   facet_wrap(~ Region, scales = "free_y") +
-  labs(x = "Attack rate (AR_S0)", y = "Density")
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  labs(x = "Attack rate", y = "Density")
+
+ggsave("06_Results/suppl_attack_rates.pdf", plot = p, width = 8, height = 6, device = cairo_pdf)
+
 
 scale_foi_to_target_ar <- function(foi_daily, ar_target) {
   H0 <- sum(foi_daily, na.rm = TRUE)

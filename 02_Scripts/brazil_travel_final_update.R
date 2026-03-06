@@ -358,7 +358,6 @@ p_daly_mid  <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
 p_death_mid <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
                                 "Death", "Benefit-Risk assessment: Death", "#B8860B")+ 
                 theme(text = element_text(family = "Calibri")) + 
-                theme(text = element_text(family = "Calibri"))+
                 labs(tag = "C",
                      caption = "Note: Background colour indicates BRR = (Deaths averted by vaccination)/(Deaths attributable to vaccination) = y/x; dashed line indicates BRR = 1 (y = x).") +
                 theme(
@@ -373,7 +372,6 @@ p_death_mid <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
 p_sae_mid   <- plot_brr_outcome(br_summarized_setting, bg_grid_optimized,
                                 "SAE",   "Benefit-Risk assessment: SAE",   "#1B7F1B")+ 
                 theme(text = element_text(family = "Calibri")) +
-                theme(text = element_text(family = "Calibri"))+
                 labs(tag = "D",
                      caption = "Note: Background colour indicates BRR = (SAEs averted by vaccination)/(SAEs attributable to vaccination) = y/x; dashed line indicates BRR = 1 (y = x).") +
                 theme(
@@ -480,7 +478,7 @@ plot_brr_ceac <- function(ceac_df,
     ) +
     facet_grid(setting ~ days) +   
     labs(
-      x = "Benefit-risk ratio (BRR) threshold (t)",
+      x = "Benefit-risk ratio (BRR)",
       y = "Probability (BRR > t)",
       title = paste0("BRR acceptability curve: ", target_outcome),
       colour = legend_title

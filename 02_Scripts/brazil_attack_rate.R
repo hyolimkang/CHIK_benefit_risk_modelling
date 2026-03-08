@@ -129,7 +129,7 @@ AR_draw_by_region <- all_draws_ix_true %>%
   summarise(tot_symp = sum(total_pre, na.rm = TRUE), .groups="drop") %>%
   left_join(S0_df, by = c("Region" = "region")) %>%
   mutate(
-    tot_inf = tot_symp / p_symp,
+    tot_inf = tot_symp / 0.524,
     AR_S0   = tot_inf / total_S0
   )
 

@@ -1125,9 +1125,9 @@ plot_sae   <- create_br_plot(summary_long_setting, "SAE")+
  theme(
     plot.tag = element_text(face = "bold", size = 16),
     plot.tag.position = c(0, 1),
-    plot.caption = element_text(hjust = 0, margin = margin(l = -8)),
+    plot.caption = element_text(hjust = 0, margin = ggplot2::margin(l = -8)),
     plot.caption.position = "plot",
-    plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 12)  
+    plot.margin = ggplot2::margin(t = 5.5, r = 5.5, b = 5.5, l = 12)  
   )
 
 plot_death <- create_br_plot(summary_long_setting, "Death")+ 

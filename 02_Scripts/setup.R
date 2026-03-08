@@ -9,7 +9,7 @@ setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandT
 # load packages
 pacman::p_load(
   dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr, flextable, sf, raster, officer, viridis,
-  cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern, showtext, writexl
+  cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern, showtext, writexl, tictoc
 )
 
 # Clean up from previous code / runs
@@ -567,7 +567,7 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
 ## LHS Samples 
 ##------------------------------------------------------------------------------
 set.seed(123)
-runs = 1000
+runs = 10000
 region_key <- c(
   "Ceará"="ce","Bahia"="bh","Paraíba"="pa","Pernambuco"="pn",
   "Rio Grande do Norte"="rg","Piauí"="pi","Tocantins"="tc",

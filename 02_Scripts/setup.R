@@ -9,7 +9,7 @@ setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandT
 # load packages
 pacman::p_load(
   dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr, flextable, sf, raster, officer, viridis,
-  cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern, showtext, writexl
+  cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern, showtext, writexl, tictoc
 )
 
 # Clean up from previous code / runs
@@ -568,7 +568,7 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
 ## LHS Samples 
 ##------------------------------------------------------------------------------
 set.seed(123)
-runs = 1000
+runs = 10000
 region_key <- c(
   "Ceará"="ce","Bahia"="bh","Paraíba"="pa","Pernambuco"="pn",
   "Rio Grande do Norte"="rg","Piauí"="pi","Tocantins"="tc",
@@ -773,3 +773,92 @@ summary_tbl <- data.frame(
 subset(summary_tbl, grepl("^p_death_", parameter))
 
 write.csv(summary_tbl, "06_Results/lhs_sample_summary_95ui.csv", row.names = FALSE)
+
+library(dplyr)
+library(tibble)
+
+# meda data ----
+dist_info <- tribble(
+  ~parameter, ~dist, ~dist_params,
+  
+  # vacc sae and death
+  "p_sae_vacc_u65",   "Beta", "shape1=6.5, shape2=32943.5",
+  "p_sae_vacc_65",    "Beta", "shape1=19.5, shape2=18426.5",
+  "p_death_vacc_u65", "Beta", "shape1=0.5, shape2=32943.5",
+  "p_death_vacc_65",  "Beta", "shape1=1.5, shape2=18444.5",
+  
+  # natural hospitalisation
+  "p_sae_nat_11", "Beta", "shape1=3704, shape2=63981",
+  "p_sae_nat_17", "Beta", "shape1=1569, shape2=59823",
+  "p_sae_nat_64", "Beta", "shape1=11345, shape2=685161",
+  "p_sae_nat_65", "Beta", "shape1=3691, shape2=110047",
+  
+  # natural death
+  "p_death_nat_11", "Beta", "shape1=33, shape2=67652",
+  "p_death_nat_17", "Beta", "shape1=23, shape2=61369",
+  "p_death_nat_64", "Beta", "shape1=313, shape2=696193",
+  "p_death_nat_65", "Beta", "shape1=535, shape2=113203",
+  
+  # ve, ar, travel duration
+  "ve",        "TruncNormal", "a=0.967, b=0.998, mean=0.989, sd=(0.998-0.967)/(2*qnorm(0.975))",
+  "ar_small",  "Uniform",     "min=0.09,  max=0.11",
+  "ar_med",    "Uniform",     "min=0.18,  max=0.22",
+  "ar_large",  "Uniform",     "min=0.27,  max=0.33",
+  "epi_months","Uniform",     "min=8.1,   max=9.9",
+  "trav_7d",   "Uniform",     "min=6.3,   max=7.7",
+  "trav_14d",  "Uniform",     "min=12.6,  max=15.4",
+  "trav_30d",  "Uniform",     "min=27,    max=33",
+  "trav_90d",  "Uniform",     "min=81,    max=99",
+  
+  # symp and hosps
+  "symp_asia",    "Beta", "shape1=49.14034, shape2=34.14837",
+  "symp_africa",  "Beta", "shape1=34.21298, shape2=31.963",
+  "symp_america", "Beta", "shape1=36.77819, shape2=32.7458",
+  "symp_overall", "Beta", "shape1=35.84287, shape2=32.55955",
+  "fatal_hosp",   "Beta", "shape1=539.2823, shape2=14152.25",
+  "hosp",         "Beta", "shape1=58.96698, shape2=1415.207",
+  "lt",           "Beta", "shape1=115.4225, shape2=111.383",
+  
+  # life expectancy by age group
+  "le_lost_1_11",  "LogNormal", "meanlog=4.26127,  sdlog=0.0511915",
+  "le_lost_12_17", "LogNormal", "meanlog=4.119037, sdlog=0.0511915",
+  "le_lost_18_64", "LogNormal", "meanlog=3.583519, sdlog=0.0511915",
+  "le_lost_65",    "LogNormal", "meanlog=1.808289, sdlog=0.0511915",
+  
+  # dws and durations
+  "dw_chronic",        "Beta",      "shape1=4.581639, shape2=9.87148",
+  "dur_chronic",       "LogNormal",  "meanlog=-0.6301724, sdlog=0.0852",
+  "dw_hosp",           "Beta",      "shape1=22.51835, shape2=146.7926",
+  "dur_acute",         "LogNormal",  "meanlog=-3.734278, sdlog=0.3877361",
+  "dw_nonhosp",        "Beta",      "shape1=21.45106, shape2=399.158",
+  "dur_nonhosp",       "LogNormal",  "meanlog=-4.108138, sdlog=0.5998406",
+  "acute",             "Beta",      "shape1=393.9252, shape2=547.0268",
+  "subac",             "Beta",      "shape1=17875.92, shape2=42754.63",
+  "chr6m",             "Beta",      "shape1=799.2911, shape2=3306.976",
+  "chr12m",            "Beta",      "shape1=77.56885, shape2=836.687",
+  "chr30m",            "Beta",      "shape1=7.605944, shape2=1074.944",
+  "dw_chronic_mild",   "LogNormal",  "meanlog=-2.145581, sdlog=0.1815621",
+  "dw_chronic_severe", "LogNormal",  "meanlog=-0.5430045, sdlog=0.154684",
+  "dur_subac",         "LogNormal",  "meanlog=-2.262311, sdlog=0.4746817",
+  "dw_subac",          "LogNormal",  "meanlog=-1.148854, sdlog=0.1815042",
+  "dur_6m",            "LogNormal",  "meanlog=-0.6931472, sdlog=0.0511915",
+  "dur_12m",           "LogNormal",  "meanlog=0,         sdlog=0.0511915",
+  "dur_30m",           "LogNormal",  "meanlog=0.6931472, sdlog=0.08380206",
+  "fatal_nonhosp",     "Beta",       "shape1=164.6044, shape2=618335.4"
+)
+
+dist_info_ar <- tibble(
+  parameter   = cols_ar,
+  dist        = "Empirical",
+  dist_params = "draws_list[[reg]] quantile(probs=u, type=8); clipped to (eps,1-eps)"
+)
+
+dist_info_all <- bind_rows(dist_info, dist_info_ar)
+
+summary_tbl2 <- summary_tbl %>%
+  left_join(dist_info_all, by = "parameter") %>%
+  relocate(dist, dist_params, .after = parameter)
+
+subset(summary_tbl2, grepl("^p_death_", parameter))
+
+write_xlsx(summary_tbl2, "06_Results/suppl_lhs_params.xlsx")

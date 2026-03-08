@@ -559,6 +559,8 @@ region_key <- c(
 )
 
 # --- optional cache for speed ---
+n_entry_samples <- 100  # Number of entry day samples to average timing uncertainty
+
 H0_by_state <- lapply(states_to_run, function(st){
   foi0 <- foi_daily_by_state[[st]]
   if (is.null(foi0)) stop("State not found in foi_daily_by_state: ", st)
@@ -567,6 +569,8 @@ H0_by_state <- lapply(states_to_run, function(st){
 names(H0_by_state) <- states_to_run
 
 psa_out_list <- list()
+
+tic("PSA Total Run")
 
 for (d in seq_len(nrow(lhs_sample))) {
   
@@ -805,6 +809,8 @@ for (d in seq_len(nrow(lhs_sample))) {
     cat("Completed", d, "of", nrow(lhs_sample), "PSA draws\n")
   }
 }
+
+toc()
 
 
 # Final combined dataframe

@@ -34,6 +34,7 @@ load("01_Data/all_draws_hosp_true.RData")
 load("01_Data/all_draws_fatal_true.RData")
 load("01_Data/all_draws_daly_true.RData")
 load("01_Data/all_draws_sae_true.RData")
+load("01_Data/psa_df_bra_travel_10ksim.RData")
 
 all_risk <- read.csv("01_Data/all_risk_four_age.csv")
 

@@ -87,6 +87,7 @@ draws_list <- lapply(draws_list, function(x){
 })
 
 
+p_symp = 0.524
 
 true_inf_region <- all_draws_ix_true %>%
   group_by(Region, draw_id) %>%

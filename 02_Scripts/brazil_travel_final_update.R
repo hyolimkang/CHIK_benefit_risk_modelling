@@ -452,6 +452,46 @@ make_brr_ceac <- function(brr_long,
     )
 }
 
+library(data.table)
+
+make_brr_ceac_dt <- function(brr_long, 
+                             thresholds = NULL, 
+                             group_vars = c("setting", "days", "age_group", "outcome"),
+                             q_low = 0.001, q_high = 0.999, 
+                             min_cap = 1e-3, max_cap = 1e3, step = 0.05) {
+  
+  dt <- as.data.table(brr_long)
+  
+  if (is.null(thresholds)) {
+    brr_vals <- dt[is.finite(brr) & brr > 0, brr]
+    if (length(brr_vals) == 0) stop("No positive finite BRR values.")
+    
+    lo <- max(quantile(brr_vals, q_low), min_cap)
+    hi <- min(quantile(brr_vals, q_high), max_cap)
+    
+    thresholds <- 10^seq(floor(log10(lo)), ceiling(log10(hi)), by = step)
+  }
+  
+  thresh_dt <- data.table(threshold = thresholds)
+  
+
+  ceac_results <- dt[, {
+    v <- .SD$brr
+    lapply(thresholds, function(t) mean(v > t))
+  }, by = group_vars]
+  
+  setnames(ceac_results, old = paste0("V", seq_along(thresholds)), new = as.character(thresholds))
+  
+  ceac_long <- melt(ceac_results, 
+                    id.vars = group_vars, 
+                    variable.name = "threshold", 
+                    value.name = "p_accept")
+  
+  ceac_long[, threshold := as.numeric(as.character(threshold))]
+  
+  return(ceac_long)
+}
+
 plot_brr_ceac <- function(ceac_df,
                           color_by = "age_group",
                           target_outcome = "DALY",
@@ -486,22 +526,24 @@ plot_brr_ceac <- function(ceac_df,
     theme_bw() +
     theme(panel.grid = element_blank())
 }
+
 brr_long <- make_brr_long(psa_df, setting_key)
 
 brr_long <- make_brr_long(psa_df, setting_key) %>%
   dplyr::mutate(days = factor(days, levels = c("7d","14d","30d","90d")))
 
-ceac_df <- make_brr_ceac(
-  brr_long
-)
+setDT(brr_long)
 
-pr_ge1_tbl <- ceac_df %>%
-  filter(threshold == 1) %>%
-  transmute(
-    setting, days, age_group, outcome,
-    pr_brr_ge_1 = p_accept,
-    n
-  )
+ceac_df <- make_brr_ceac_dt(brr_long)
+
+pr_ge1_tbl <- ceac_df[threshold == 1, .(
+  setting, 
+  days, 
+  age_group, 
+  outcome, 
+  pr_brr_ge_1 = p_accept,
+  n = .N  
+)]
 
 pr_gt1_wide <- ceac_df %>%
   mutate(
@@ -579,58 +621,64 @@ ar_summary_all <- psa_df %>%
     age_group = ifelse(age_group == "65", "65+", age_group)
   ) %>%
   filter(!is.na(setting)) %>%
+  # Define pure averted and pure caused first
+  mutate(
+    # Benefit
+    av_sae = averted_10k_sae, av_death = averted_10k_death, av_daly = daly_averted,
+    # Risk (Pure vaccine only)
+    ca_sae = excess_10k_sae, ca_death = excess_10k_death, ca_daly = daly_sae
+  ) %>%
   pivot_longer(
-    cols = c(brr_sae, brr_death, brr_daly),
-    names_to = "outcome",
-    values_to = "brr"
+    cols = c(contains("av_"), contains("ca_")),
+    names_to = c(".value", "outcome"),
+    names_sep = "_"
   ) %>%
   mutate(
-    outcome = recode(outcome,
-                     brr_sae   = "SAE",
-                     brr_death = "Death",
-                     brr_daly  = "DALY"),
-    setting = factor(setting, levels = c("Low","Moderate","High"))
+    outcome = toupper(outcome),
+    # RE-CALCULATE BRR here to ensure it uses the pure 'ca' (caused) value
+    brr = av / pmax(ca, 1e-12)
   ) %>%
   group_by(outcome, setting, age_group, days) %>%
   summarise(
     brr_med = median(brr, na.rm = TRUE),
     brr_lo  = quantile(brr, 0.025, na.rm = TRUE),
     brr_hi  = quantile(brr, 0.975, na.rm = TRUE),
+    av_med = median(av, na.rm = TRUE),
+    av_lo  = quantile(av, 0.025, na.rm = TRUE),
+    av_hi  = quantile(av, 0.975, na.rm = TRUE),
+    ca_med = median(ca, na.rm = TRUE),
+    ca_lo  = quantile(ca, 0.025, na.rm = TRUE),
+    ca_hi  = quantile(ca, 0.975, na.rm = TRUE),
     .groups = "drop"
   )
 
-ar_table_wide <- ar_summary_all %>%
+# 2. Reshape and Rename
+ar_table_wide2 <- ar_summary_all %>%
   mutate(
-    brr_formatted = sprintf("%.2f [%.2f–%.2f]", brr_med, brr_lo, brr_hi)
+    brr_fmt = sprintf("%.2f [%.2f–%.2f]", brr_med, brr_lo, brr_hi),
+    av_fmt  = sprintf("%.2f [%.2f–%.2f]", av_med, av_lo, av_hi),
+    ca_fmt  = sprintf("%.2f [%.2f–%.2f]", ca_med, ca_lo, ca_hi)
   ) %>%
-  dplyr::select(outcome, setting, age_group, days, brr_formatted) %>%
-  pivot_wider(names_from = days, values_from = brr_formatted) %>%
-  arrange(outcome, setting, age_group)
-
-idx_outcome <- table(ar_table_wide$outcome)
-
-ar_table_wide2 <- ar_table_wide %>%
+  dplyr::select(outcome, setting, age_group, days, brr_fmt, av_fmt, ca_fmt) %>%
+  pivot_wider(
+    names_from = days, 
+    values_from = c(brr_fmt, av_fmt, ca_fmt),
+    names_glue = "{days}_{.value}"
+  ) %>%
   left_join(pr_gt1_wide, by = c("outcome","setting","age_group"))
 
-ar_table_wide2 <- ar_table_wide2 %>%
-  relocate(`7d_Pr(BRR>1)`,  .after = `7d`)  %>%
-  relocate(`14d_Pr(BRR>1)`, .after = `14d`) %>%
-  relocate(`30d_Pr(BRR>1)`, .after = `30d`) %>%
-  relocate(`90d_Pr(BRR>1)`, .after = `90d`)
+# 3. Clean names and Final Table
+# Use ar_table_wide2 for kable!
+colnames(ar_table_wide2) <- names(ar_table_wide2) %>%
+  gsub("_brr_fmt", "", .) %>%
+  gsub("_av_fmt", "_Averted", .) %>%
+  gsub("_ca_fmt", "_Caused", .)
 
+# Ensure the columns exist before relocating
+# This kable uses 'ar_table_wide2'
 kable(
-  ar_table_wide,
+  ar_table_wide2, # FIXED: was ar_table_wide
   format = "html",
-  col.names = c("Outcome", "Setting", "Age Group",
-                "7 days", "14 days", "30 days", "90 days"),
-  caption = "Benefit–Risk Ratio (BRR) by Outcome, Setting, Age Group, and Travel Duration",
-  align = c("l", "c", "c", "r", "r", "r", "r")
+  caption = "Benefit–Risk Ratio (BRR) with Pure Vaccine Risk"
 ) %>%
-  kable_styling(
-    bootstrap_options = c("striped", "hover", "condensed"),
-    full_width = FALSE,
-    font_size = 12
-  ) %>%
-  pack_rows(index = idx_outcome) %>%
-  column_spec(1, bold = TRUE) %>%
-  column_spec(2, bold = TRUE)
+  kable_styling()

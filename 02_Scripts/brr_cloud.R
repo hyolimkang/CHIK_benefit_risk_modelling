@@ -1,6 +1,10 @@
-library(dplyr)
-library(tidyr)
+setDT(psa_df)
+set.seed(1)
+keep_draws <- sample(unique(psa_df$draw), 3000)
+psa_dt_sub <- psa_df[draw %in% keep_draws]
 
+
+####
 make_cloud_long <- function(psa_df, setting_key,
                             days_levels = c("7d","14d","30d","90d")) {
   
@@ -49,19 +53,12 @@ get_cloud_limits <- function(cloud_df, target_outcome, pad = 0.05) {
   x_max <- max(df$caused_10k, na.rm = TRUE)
   y_max <- max(df$prevented_10k, na.rm = TRUE)
   
-  # 0부터 시작, 약간 여유(pad) 줌
   list(
     x_lim = c(0, x_max * (1 + pad)),
     y_lim = c(0, y_max * (1 + pad))
   )
 }
 
-
-library(ggplot2)
-
-library(dplyr)
-library(ggplot2)
-library(scales)
 
 plot_prob_cloud <- function(cloud_df, target_outcome,
                             days_levels = c("7d", "14d", "30d", "90d"),
@@ -95,7 +92,7 @@ plot_prob_cloud <- function(cloud_df, target_outcome,
   }
   
   # Define axis labels
-  label_suffix <- ifelse(target_outcome == "DALY", "", " (per 10,000 doses)")
+  label_suffix <- ifelse(target_outcome == "DALY", "", " (per 10,000 vaccinated individuals)")
   x_label <- paste0(target_outcome, "s caused by vaccination", label_suffix)
   y_label <- paste0(target_outcome, "s prevented by vaccination", label_suffix)
   
@@ -149,12 +146,7 @@ plot_prob_cloud <- function(cloud_df, target_outcome,
 }
 
 
-cloud_long <- make_cloud_long(psa_df, setting_key)
-
-cloud_df_balanced <- cloud_long %>%
-  group_by(setting, days, age_group, outcome) %>%
-  slice_sample(n = 1000) %>% 
-  ungroup()
+cloud_long <- make_cloud_long(psa_dt_sub, setting_key)
 
 p_cloud_death_log <- plot_prob_cloud(cloud_long, "Death", transform = "log10", eps = 1e-3) +
   theme(text = element_text(family = "Calibri"))
@@ -165,20 +157,12 @@ p_cloud_daly_log <- plot_prob_cloud(cloud_long, "DALY", transform = "log10", eps
 p_cloud_sae_log <- plot_prob_cloud(cloud_long, "SAE", transform = "log10", eps = 1e-3) +
   theme(text = element_text(family = "Calibri"))
 
-apc_long <- make_averted_per_caused_long(cloud_long)
 
-apc_acc_dense <- make_apc_acceptability_dense(
-  apc_long,
-  t_min = 0.01, t_max = 100, n_grid = 300
-)
-
-p_apc_death <- plot_apc_acceptability(apc_acc_dense, target_outcome = "Death") +
-  theme(text = element_text(family = "Calibri"))
+ggsave("06_Results/brr_travel_daly_cloud.pdf", plot = p_cloud_daly_log, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brr_travel_death_cloud.pdf", plot = p_cloud_death_log, width = 10, height = 8, device = cairo_pdf)
+ggsave("06_Results/brr_travel_sae_cloud.pdf", plot = p_cloud_sae_log, width = 10, height = 8, device = cairo_pdf)
 
 ######
-
-library(dplyr)
-library(ggplot2)
 
 prep_cloud_pool_setting <- function(draw_level_xy_true,
                                     coverage_keep = "cov50",
@@ -208,39 +192,28 @@ prep_cloud_pool_setting <- function(draw_level_xy_true,
 
 plot_cloud_pool_auto_scale <- function(df,
                                        target_outcome = "SAE",
-                                       # log10일 때만 eps 필요
-                                       eps_log = 1e-2,
-                                       # pseudo-log일 때 0 근처 완화 정도
-                                       sigma_pseudo = 1e-3,
+                                       eps_log = 0.01,
                                        alpha_cloud = 0.06,
                                        point_size = 0.7,
                                        add_summary = TRUE,
                                        drop_refline_for_SAE = FALSE) {
   
-  library(dplyr)
-  library(ggplot2)
-  library(scales)
-  
+
+  # Filter data by the target outcome
   dd <- df %>% filter(outcome == target_outcome)
-  if (nrow(dd) == 0) stop("No rows left after filtering outcome/coverage.")
+  if (nrow(dd) == 0) stop("No rows left after filtering.")
   
-  # ====== outcome별 스케일 선택 ======
-  mode <- if (target_outcome == "Death") "pseudo" else "log10"
+  # --- SCALE STRATEGY (Simplified: All use log10 with clipping) ---
+  # To avoid zero values for log10, clip values below eps_log.
+  # If you call with Death, consider using a very small eps_log (e.g., 1e-4) to reduce the clipping band.
+  dd <- dd %>% mutate(
+    x_plot = pmax(x, eps_log),
+    y_plot = pmax(y, eps_log)
+  )
+  # All outcomes use log10 strategy for dynamic scale application
+  trans_mode <- "log10" 
   
-  # plot 좌표 만들기
-  if (mode == "log10") {
-    dd <- dd %>% mutate(
-      x_plot = pmax(x, eps_log),
-      y_plot = pmax(y, eps_log)
-    )
-  } else { # pseudo
-    dd <- dd %>% mutate(
-      x_plot = x,
-      y_plot = y
-    )
-  }
-  
-  # ====== 요약도 plot-space 기준으로 (중요) ======
+  # Calculate summary statistics (median and 95% CI)
   if (add_summary) {
     summ <- dd %>%
       group_by(setting, AgeCat, VE_show) %>%
@@ -255,76 +228,68 @@ plot_cloud_pool_auto_scale <- function(df,
       )
   }
   
+  # Dynamic labeling for X and Y axes
   x_label <- dplyr::case_when(
     target_outcome == "DALY"  ~ "DALYs attributable to vaccination (per 10,000 vaccinated)",
     target_outcome == "SAE"   ~ "SAEs attributable to vaccination (per 10,000 vaccinated)",
     target_outcome == "Death" ~ "Deaths attributable to vaccination (per 10,000 vaccinated)",
-    TRUE ~ "Attributable to vaccination (per 10,000 vaccinated)"
+    TRUE ~ "Attributable to vaccination"
   )
   y_label <- dplyr::case_when(
     target_outcome == "DALY"  ~ "DALYs averted by vaccination (per 10,000 vaccinated)",
     target_outcome == "SAE"   ~ "SAEs averted by vaccination (per 10,000 vaccinated)",
     target_outcome == "Death" ~ "Deaths averted by vaccination (per 10,000 vaccinated)",
-    TRUE ~ "Averted by vaccination (per 10,000 vaccinated)"
+    TRUE ~ "Averted by vaccination"
   )
   
-  p <- ggplot(dd, aes(x = x_plot, y = y_plot, colour = VE_show)) +
+  # Initialize the plot (Merging shape and colour legends)
+  p <- ggplot(dd, aes(x = x_plot, y = y_plot, colour = VE_show, shape = VE_show)) +
     geom_point(alpha = alpha_cloud, size = point_size) +
     facet_grid(setting ~ AgeCat) +
     labs(
-      title = paste0("Probabilistic cloud: ", target_outcome,
-                     " (", ifelse(mode == "log10","log10","pseudo-log"), " scale)"),
+      title = paste0("Probabilistic cloud: ", target_outcome),
       x = x_label,
       y = y_label,
       colour = "Vaccine protection mechanism",
-      shape  = "Vaccine protection mechanism"
+      shape  = "Vaccine protection mechanism" # Merged legend
     ) +
-    theme_bw() +
-    theme(panel.grid = element_blank())
+    theme_bw() + # Grey facet backgrounds
+    theme(
+      text = element_text(family = "Calibri", size = 10),
+      panel.grid = element_blank(),
+      strip.text = element_text(size = 11),
+      legend.position = "right" 
+    )
   
-  # 기준선(y=x): SAE에서 헷갈리면 옵션으로 제거
+  # Apply scale transformation dinamically (now always log10)
+  p <- p + scale_x_continuous(trans = trans_mode) + 
+    scale_y_continuous(trans = trans_mode)
+  
+  # Add identity line unless dropped for SAE
   if (!(drop_refline_for_SAE && target_outcome == "SAE")) {
     p <- p + geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40")
   }
   
-  # 스케일 적용
-  if (mode == "log10") {
-    p <- p + scale_x_log10() + scale_y_log10()
-  } else {
-    p <- p +
-      scale_x_continuous(trans = scales::pseudo_log_trans(sigma = sigma_pseudo)) +
-      scale_y_continuous(trans = scales::pseudo_log_trans(sigma = sigma_pseudo))
-  }
-  
-  # 요약 overlay: errorbar는 색만, point는 색+shape
+  # Overlay summary statistics if requested
   if (add_summary) {
     p <- p +
-      geom_errorbar(
-        data = summ,
-        aes(x = x_med, ymin = y_lo, ymax = y_hi, colour = VE_show),
-        width = 0, linewidth = 0.5, inherit.aes = FALSE
-      ) +
-      geom_errorbarh(
-        data = summ,
-        aes(y = y_med, xmin = x_lo, xmax = x_hi, colour = VE_show),
-        height = 0, linewidth = 0.5, inherit.aes = FALSE
-      ) +
-      geom_point(
-        data = summ,
-        aes(x = x_med, y = y_med, colour = VE_show, shape = VE_show),
-        size = 2.6, inherit.aes = FALSE, fill = "white", stroke = 0.9
-      ) +
-      scale_shape_manual(
-        values = c(
-          "Disease blocking only" = 21,
-          "Disease and infection blocking" = 24
-        )
-      )
+      geom_errorbar(data = summ, aes(x = x_med, ymin = y_lo, ymax = y_hi, colour = VE_show),
+                    width = 0, linewidth = 0.5, inherit.aes = FALSE) +
+      geom_errorbarh(data = summ, aes(y = y_med, xmin = x_lo, xmax = x_hi, colour = VE_show),
+                     height = 0, linewidth = 0.5, inherit.aes = FALSE) +
+      geom_point(data = summ, aes(x = x_med, y = y_med, colour = VE_show, shape = VE_show),
+                 size = 2.6, inherit.aes = FALSE, fill = "white", stroke = 0.9) +
+      # Assigning specific shapes to mechanisms for the merged legend
+      scale_shape_manual(values = c("Disease blocking only" = 21, 
+                                    "Disease and infection blocking" = 24))
   }
   
-  p
+  return(p)
 }
+
 cloud_pool <- prep_cloud_pool_setting(draw_level_xy_true, coverage_keep = "cov50")
+
+
 
 p_sae <- plot_cloud_pool_auto_scale(cloud_pool, "SAE", eps_log = 1e-2) +
   theme(text = element_text(family = "Calibri"))
@@ -332,13 +297,17 @@ p_sae <- plot_cloud_pool_auto_scale(cloud_pool, "SAE", eps_log = 1e-2) +
 p_daly <- plot_cloud_pool_auto_scale(cloud_pool, "DALY", eps_log = 1e-2) +
   theme(text = element_text(family = "Calibri"))
 
-p_death <- plot_cloud_pool_auto_scale(cloud_pool, "Death", sigma_pseudo = 1e-2) +
-  theme(text = element_text(family = "Calibri"))
+p_death <-plot_cloud_pool_auto_scale(cloud_pool, "Death", eps_log = 1e-6) +
+  scale_x_log10(
+    breaks = scales::log_breaks(n = 5),
+    labels = scales::label_number(accuracy = 0.000001, trim = TRUE)
+  ) +
+  theme(
+    axis.text.x = element_text(size = 8, angle = 30, hjust = 1)
+  )
 
-
-p_death_sqrt <- plot_cloud_pool_death_linear(cloud_pool) +
-  scale_x_continuous(trans = "sqrt") +
-  scale_y_continuous(trans = "sqrt") +
-  theme(text = element_text(family = "Calibri"))
+ggsave("06_Results/brr_ori_daly_cloud.pdf", plot = p_daly, width = 10, height = 7, device = cairo_pdf)
+ggsave("06_Results/brr_ori_death_cloud.pdf", plot = p_death, width = 10, height = 7, device = cairo_pdf)
+ggsave("06_Results/brr_ori_sae_cloud.pdf", plot = p_sae, width = 10, height = 7, device = cairo_pdf)
 
 

@@ -61,7 +61,8 @@ plot_combined_risk_acceptability_linear <- function(psa_df) {
       legend.position = "right",
       strip.background = element_rect(fill = "grey95", color = "black"),
       strip.text = element_text(face = "bold"),
-      text = element_text(family = "Calibri")
+      text = element_text(family = "Calibri"),
+      axis.text  = element_text(size = 11)
     )
   
   return(p)
@@ -171,20 +172,24 @@ plot_combined_risk_probability_ascending <- function(psa_df) {
     
     # Labels and Theme
     labs(
-      x = "Number vaccinated per 1 adverse outcome",
-      y = "% Probability of Risk",
+      x = "Vaccinated individuals per adverse outcome",
+      y = "Probability of adverse outcome (%)",
       color = "Age Group",
       caption = "Note: Threshold values represent the point where risk reaches 100%"
     ) +
     theme_bw() + # Restoring default theme_bw (Grey strip backgrounds)
     theme(
-      text = element_text(family = "Calibri", size = 10),
+      text = element_text(family = "Calibri", size = 12),
       plot.margin = margin(10, 35, 10, 10),
       panel.grid.major = element_line(color = "grey98"),
       panel.grid.minor = element_blank(),
       strip.text = element_text(face = "bold", size = 11),
       legend.position = "bottom",
-      axis.title = element_text(face = "bold")
+      axis.title = element_text(face = "bold"),
+      axis.text  = element_text(size = 12),
+    ) + theme(
+      plot.caption = element_text(size = 12, face = "plain", margin = margin(t = 8)),
+      plot.caption.position = "plot"
     )
   
   return(p)

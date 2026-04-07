@@ -860,6 +860,361 @@ draw_level_xy_true <- joint_true %>%
   ) %>%
   dplyr::ungroup()
 
+
+### added on 2026.0404 -- serostatus specific risk -----------------------------
+age_map <- data.frame(
+  age_index = 1:20,
+  age_gr = c(
+    "<1", "1-4", "5-9", "10-11", "12-17", "18-19", "20-24", "25-29",
+    "30-34", "35-39", "40-44", "45-49", "50-54", "55-59",
+    "60-64", "65-69", "70-74", "75-79", "80-84", "85+"
+  ),
+  AgeCat = c(
+    "1-11", "1-11", "1-11", "1-11",
+    "12-17",
+    "18-64", "18-64", "18-64", "18-64", "18-64",
+    "18-64", "18-64", "18-64", "18-64", "18-64",
+    "65+", "65+", "65+", "65+", "65+"
+  )
+)
+
+### step 1. 
+### 65+ baseline harms reproduce the original implementation after aligning the originally assigned risk draw.
+### Under-65 baseline harms differ by design because vaccine-attributable death risk is fixed at zero in the revised implementation.
+
+q_all_regions <- purrr::imap_dfr(postsim_vc_ixchiq_model, function(region_list, region_name) {
+  
+  purrr::imap_dfr(region_list, function(ve_list, ve_name) {
+    
+    purrr::imap_dfr(ve_list, function(cov_list, cov_name) {
+      
+      q_tmp <- calc_q_seromix_for_scenarios_agecat(
+        sim_region_ve_cov = cov_list$scenario_result,
+        age_map = age_map
+      )
+      
+      q_tmp %>%
+        dplyr::mutate(
+          Region = region_name,
+          VE = ve_name,
+          Coverage = cov_name
+        ) %>%
+        dplyr::select(
+          Region, VE, Coverage, Scenario, draw_id, AgeCat,
+          total_vacc_age, seroneg_vacc_age, seropos_vacc_age,
+          q_seroneg_vacc, q_seropos_vacc
+        )
+    })
+  })
+})
+
+
+### step 2. risk table generation from LSH sample
+risk_draw_df <- bind_rows(
+  tibble(
+    draw_id = 1:nrow(lhs_sample),
+    AgeCat = "1-11",
+    p_sae_vacc_base   = lhs_sample[, "p_sae_vacc_u65"],
+    p_death_vacc_base = lhs_sample[, "p_death_vacc_u65"]
+  ),
+  tibble(
+    draw_id = 1:nrow(lhs_sample),
+    AgeCat = "12-17",
+    p_sae_vacc_base   = lhs_sample[, "p_sae_vacc_u65"],
+    p_death_vacc_base = lhs_sample[, "p_death_vacc_u65"]
+  ),
+  tibble(
+    draw_id = 1:nrow(lhs_sample),
+    AgeCat = "18-64",
+    p_sae_vacc_base   = lhs_sample[, "p_sae_vacc_u65"],
+    p_death_vacc_base = lhs_sample[, "p_death_vacc_u65"]
+  ),
+  tibble(
+    draw_id = 1:nrow(lhs_sample),
+    AgeCat = "65+",
+    p_sae_vacc_base   = lhs_sample[, "p_sae_vacc_65"],
+    p_death_vacc_base = lhs_sample[, "p_death_vacc_65"]
+  )
+)
+
+## step 3. combining risk and region data
+rr_vals <- c(1.0, 0.5, 0.1, 0.0)
+
+risk_components_all <- q_all_regions %>%
+  tidyr::crossing(RR_seropos = rr_vals) %>%
+  dplyr::left_join(
+    risk_draw_df,
+    by = c("draw_id", "AgeCat")
+  )
+
+risk_components_all <- risk_components_all %>%
+  dplyr::mutate(
+    # conditional risk by serostatus
+    p_sae_vacc_seroneg   = p_sae_vacc_base,
+    p_death_vacc_seroneg = p_death_vacc_base,
+    
+    p_sae_vacc_seropos   = p_sae_vacc_base * RR_seropos,
+    p_death_vacc_seropos = p_death_vacc_base * RR_seropos,
+    
+    # contribution to vaccinated cohort
+    p_sae_vacc_seroneg_contrib = dplyr::if_else(
+      total_vacc_age > 0,
+      q_seroneg_vacc * p_sae_vacc_seroneg,
+      0
+    ),
+    p_death_vacc_seroneg_contrib = dplyr::if_else(
+      total_vacc_age > 0,
+      q_seroneg_vacc * p_death_vacc_seroneg,
+      0
+    ),
+    
+    p_sae_vacc_seropos_contrib = dplyr::if_else(
+      total_vacc_age > 0,
+      q_seropos_vacc * p_sae_vacc_seropos,
+      0
+    ),
+    p_death_vacc_seropos_contrib = dplyr::if_else(
+      total_vacc_age > 0,
+      q_seropos_vacc * p_death_vacc_seropos,
+      0
+    ),
+    
+    # total adjusted
+    p_sae_vacc_adj = p_sae_vacc_seroneg_contrib + p_sae_vacc_seropos_contrib,
+    p_death_vacc_adj = p_death_vacc_seroneg_contrib + p_death_vacc_seropos_contrib
+  )
+
+# step 4. estimating SAE and death per 10,000
+risk_components_all <- risk_components_all %>%
+  dplyr::mutate(
+    # baseline
+    sae_10k_base   = 1e4 * p_sae_vacc_base + 1e4 * p_death_vacc_base,
+    death_10k_base = 1e4 * p_death_vacc_base,
+    
+    # seronegative contribution
+    sae_10k_seroneg   = 1e4 * p_sae_vacc_seroneg_contrib + 1e4 * p_death_vacc_seroneg_contrib,
+    death_10k_seroneg = 1e4 * p_death_vacc_seroneg_contrib,
+    
+    # seropositive contribution
+    sae_10k_seropos   = 1e4 * p_sae_vacc_seropos_contrib + 1e4 * p_death_vacc_seropos_contrib,
+    death_10k_seropos = 1e4 * p_death_vacc_seropos_contrib,
+    
+    # adjusted total
+    sae_10k_adj   = sae_10k_seroneg + sae_10k_seropos,
+    death_10k_adj = death_10k_seroneg + death_10k_seropos
+  )
+
+# step 5. joining with benefit data
+risk_join_all <- risk_components_all %>%
+  dplyr::select(
+    Region, VE, Coverage, Scenario, draw_id, AgeCat, RR_seropos,
+    total_vacc_age, q_seroneg_vacc, q_seropos_vacc,
+    p_sae_vacc_base, p_death_vacc_base,
+    p_sae_vacc_seroneg, p_death_vacc_seroneg,
+    p_sae_vacc_seropos, p_death_vacc_seropos,
+    p_sae_vacc_seroneg_contrib, p_death_vacc_seroneg_contrib,
+    p_sae_vacc_seropos_contrib, p_death_vacc_seropos_contrib,
+    p_sae_vacc_adj, p_death_vacc_adj,
+    sae_10k_base, death_10k_base,
+    sae_10k_seroneg, death_10k_seroneg,
+    sae_10k_seropos, death_10k_seropos,
+    sae_10k_adj, death_10k_adj
+  )
+
+# step 6.  draw-level burden table 
+benefit_draw_df <- benefit_base_true %>%
+  dplyr::left_join(
+    tot_vacc_map_true,
+    by = c("Region", "Scenario", "VE", "AgeCat")
+  ) %>%
+  dplyr::mutate(
+    Scenario = as.integer(Scenario),
+    baseline_10k = (baseline / tot_vacc_grp) * 1e4,
+    post_10k     = (post / tot_vacc_grp) * 1e4,
+    averted_10k  = (averted / tot_vacc_grp) * 1e4,
+    pct_reduction = dplyr::if_else(
+      baseline > 0,
+      100 * averted / baseline,
+      NA_real_
+    )
+  )
+
+benefit_draw_df <- tidyr::crossing(
+  benefit_draw_df,
+  RR_seropos = rr_vals
+)
+
+# join benefit + risk decomposition
+draw_level_xy_serostatus <- benefit_draw_df %>%
+  dplyr::left_join(
+    risk_join_all,
+    by = c("Region", "VE", "Coverage", "Scenario", "draw_id", "AgeCat", "RR_seropos")
+  )
+
+# vaccine-caused DALY
+draw_level_xy_serostatus <- draw_level_xy_serostatus %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(
+    daly_10k_base = if (outcome == "DALY") {
+      compute_daly_one(
+        age_group      = AgeCat,
+        sae_10k        = sae_10k_base,
+        deaths_sae_10k = death_10k_base,
+        draw_pars = list(
+          le_lost_1_11  = le_lost_1_11,
+          le_lost_12_17 = le_lost_12_17,
+          le_lost_18_64 = le_lost_18_64,
+          le_lost_65    = le_lost_65,
+          dw_hosp       = dw_hosp,
+          dw_nonhosp    = dw_nonhosp,
+          dw_subac      = dw_subac,
+          dw_chronic    = dw_chronic,
+          dur_acute     = dur_acute,
+          dur_nonhosp   = dur_nonhosp,
+          dur_subac     = dur_subac,
+          dur_6m        = dur_6m,
+          dur_12m       = dur_12m,
+          dur_30m       = dur_30m,
+          acute         = acute,
+          subac         = subac,
+          chr6m         = chr6m,
+          chr12m        = chr12m,
+          chr30m        = chr30m
+        )
+      )$daly_sae
+    } else {
+      NA_real_
+    },
+    
+    daly_10k_seroneg = if (outcome == "DALY") {
+      compute_daly_one(
+        age_group      = AgeCat,
+        sae_10k        = sae_10k_seroneg,
+        deaths_sae_10k = death_10k_seroneg,
+        draw_pars = list(
+          le_lost_1_11  = le_lost_1_11,
+          le_lost_12_17 = le_lost_12_17,
+          le_lost_18_64 = le_lost_18_64,
+          le_lost_65    = le_lost_65,
+          dw_hosp       = dw_hosp,
+          dw_nonhosp    = dw_nonhosp,
+          dw_subac      = dw_subac,
+          dw_chronic    = dw_chronic,
+          dur_acute     = dur_acute,
+          dur_nonhosp   = dur_nonhosp,
+          dur_subac     = dur_subac,
+          dur_6m        = dur_6m,
+          dur_12m       = dur_12m,
+          dur_30m       = dur_30m,
+          acute         = acute,
+          subac         = subac,
+          chr6m         = chr6m,
+          chr12m        = chr12m,
+          chr30m        = chr30m
+        )
+      )$daly_sae
+    } else {
+      NA_real_
+    },
+    
+    daly_10k_seropos = if (outcome == "DALY") {
+      compute_daly_one(
+        age_group      = AgeCat,
+        sae_10k        = sae_10k_seropos,
+        deaths_sae_10k = death_10k_seropos,
+        draw_pars = list(
+          le_lost_1_11  = le_lost_1_11,
+          le_lost_12_17 = le_lost_12_17,
+          le_lost_18_64 = le_lost_18_64,
+          le_lost_65    = le_lost_65,
+          dw_hosp       = dw_hosp,
+          dw_nonhosp    = dw_nonhosp,
+          dw_subac      = dw_subac,
+          dw_chronic    = dw_chronic,
+          dur_acute     = dur_acute,
+          dur_nonhosp   = dur_nonhosp,
+          dur_subac     = dur_subac,
+          dur_6m        = dur_6m,
+          dur_12m       = dur_12m,
+          dur_30m       = dur_30m,
+          acute         = acute,
+          subac         = subac,
+          chr6m         = chr6m,
+          chr12m        = chr12m,
+          chr30m        = chr30m
+        )
+      )$daly_sae
+    } else {
+      NA_real_
+    },
+    
+    daly_10k_adj = if (outcome == "DALY") {
+      daly_10k_seroneg + daly_10k_seropos
+    } else {
+      NA_real_
+    }
+  ) %>%
+  dplyr::ungroup()
+
+# labels
+draw_level_xy_serostatus <- draw_level_xy_serostatus %>%
+  dplyr::mutate(
+    VE_label = factor(
+      VE,
+      levels = c("VE0", "VE98.9"),
+      labels = c("Disease blocking only", "Disease and infection blocking")
+    ),
+    setting = unname(setting_key[Region])
+  )
+
+draw_level_xy_serostatus <- draw_level_xy_serostatus %>%
+  dplyr::mutate(
+    x_10k_base = dplyr::case_when(
+      outcome == "SAE"   ~ sae_10k_base,
+      outcome == "Death" ~ death_10k_base,
+      outcome == "DALY"  ~ daly_10k_base,
+      TRUE ~ NA_real_
+    ),
+    x_10k_adj = dplyr::case_when(
+      outcome == "SAE"   ~ sae_10k_adj,
+      outcome == "Death" ~ death_10k_adj,
+      outcome == "DALY"  ~ daly_10k_adj,
+      TRUE ~ NA_real_
+    ),
+    brr_base = dplyr::if_else(
+      is.na(x_10k_base) | x_10k_base == 0,
+      NA_real_,
+      averted_10k / x_10k_base
+    ),
+    brr_adj = dplyr::if_else(
+      is.na(x_10k_adj) | x_10k_adj == 0,
+      NA_real_,
+      averted_10k / x_10k_adj
+    )
+  )
+
+brr_draw_summary_true <- draw_level_xy_serostatus %>%
+  dplyr::mutate(
+    brr_base = ifelse(is.infinite(brr_base), NA, brr_base),
+    brr_adj  = ifelse(is.infinite(brr_adj),  NA, brr_adj)
+  ) %>%
+  dplyr::group_by(outcome, Scenario, AgeCat, VE_label, RR_seropos) %>%
+  dplyr::summarise(
+    brr_base_med = quantile(brr_base, 0.50,  na.rm = TRUE),
+    brr_base_lo  = quantile(brr_base, 0.025, na.rm = TRUE),
+    brr_base_hi  = quantile(brr_base, 0.975, na.rm = TRUE),
+    
+    brr_adj_med  = quantile(brr_adj,  0.50,  na.rm = TRUE),
+    brr_adj_lo   = quantile(brr_adj,  0.025, na.rm = TRUE),
+    brr_adj_hi   = quantile(brr_adj,  0.975, na.rm = TRUE),
+    
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    scenario  = Scenario,
+    age_group = AgeCat
+  )
+
 # -------------------------------
 # 8) VE label (plot-friendly)
 # -------------------------------

@@ -572,6 +572,9 @@ psa_out_list <- list()
 
 tic("PSA Total Run")
 
+# only >=18
+all_risk <- all_risk %>% filter(SAE != "NA")
+
 for (d in seq_len(nrow(lhs_sample))) {
   
   # ---- Sample uncertain parameters from LHS ----

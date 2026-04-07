@@ -148,7 +148,12 @@ plot_prob_cloud <- function(cloud_df, target_outcome,
 
 cloud_long <- make_cloud_long(psa_dt_sub, setting_key)
 
-p_cloud_death_log <- plot_prob_cloud(cloud_long, "Death", transform = "log10", eps = 1e-3) +
+cloud_death <- cloud_long %>%
+  filter(outcome == "Death") %>%
+  filter(prevented_10k != 0 | caused_10k != 0) %>%
+  filter(age_group == "65+")
+
+p_cloud_death_log <- plot_prob_cloud(cloud_death, "Death", transform = "log10", eps = 1e-3) +
   theme(text = element_text(family = "Calibri"))
 
 p_cloud_daly_log <- plot_prob_cloud(cloud_long, "DALY", transform = "log10", eps = 1e-3) +
@@ -287,7 +292,7 @@ plot_cloud_pool_auto_scale <- function(df,
   return(p)
 }
 
-cloud_pool <- prep_cloud_pool_setting(draw_level_xy_true, coverage_keep = "cov50")
+cloud_pool <- prep_cloud_pool_setting(draw_level_xy_serostatus, coverage_keep = "cov50")
 
 
 

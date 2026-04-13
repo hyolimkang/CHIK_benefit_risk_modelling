@@ -1,10 +1,11 @@
 # ----------------------------------------------------------
 # Load packages and source functions/other scripts
 # ----------------------------------------------------------
-
 # setwd
-setwd("C:/Users/user/OneDrive - London School of Hygiene and Tropical Medicine/CHIK_benefit_risk")
-setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandTropicalMedicine/CHIK_benefit_risk")
+#setwd("C:/Users/user/OneDrive - London School of Hygiene and Tropical Medicine/CHIK_benefit_risk")
+#setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandTropicalMedicine/CHIK_benefit_risk")
+setwd("C:/Users/user/OneDrive - Nagasaki University (1)/CHIK_benefit_risk")
+
 
 # load packages
 pacman::p_load(
@@ -690,7 +691,7 @@ lhs_sample [,43]   <- qbeta (p = A[,43], shape1 = 7.605944, shape2 = 1074.944, n
 lhs_sample [,44]  <- qlnorm (p = A[,44], meanlog = -2.145581, sdlog =  0.1815621, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,45]  <- qlnorm (p = A[,45], meanlog = -0.5430045, sdlog =  0.154684, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,46]  <- qlnorm (p = A[,46], meanlog = -2.262311, sdlog =  0.4746817, lower.tail = TRUE, log.p = FALSE)
-lhs_sample [,47]  <- qlnorm (p = A[,47], meanlog = -1.148854, sdlog = 0.1815042, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,47]  <- qbeta (p = A[,47], shape1 = 4.581639, shape2 = 9.87148, ncp=0, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,48]  <- qlnorm (p = A[,48], meanlog =  -0.6931472, sdlog =  0.0511915, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,49]  <- qlnorm (p = A[,49], meanlog = 0, sdlog =  0.0511915, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,50]  <- qlnorm (p = A[,50], meanlog = 0.6931472, sdlog = 0.08380206, lower.tail = TRUE, log.p = FALSE)

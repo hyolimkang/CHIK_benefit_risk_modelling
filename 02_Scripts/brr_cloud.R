@@ -171,7 +171,16 @@ ggsave("06_Results/brr_travel_sae_cloud.pdf", plot = p_cloud_sae_log, width = 10
 
 prep_cloud_pool_setting <- function(draw_level_xy_true,
                                     coverage_keep = "cov50",
-                                    outcome_keep = c("SAE","Death","DALY")) {
+                                    outcome_keep = c("SAE","Death","DALY"),
+                                    age_keep = c("18-64", "65+")) {
+  # Backward-compatible y source:
+  # prefer y_10k if present; otherwise fall back to averted_10k.
+  if (!("y_10k" %in% names(draw_level_xy_true)) &&
+      ("averted_10k" %in% names(draw_level_xy_true))) {
+    draw_level_xy_true <- draw_level_xy_true %>%
+      dplyr::mutate(y_10k = averted_10k)
+  }
+  
   draw_level_xy_true %>%
     filter(Coverage == coverage_keep) %>%
     filter(outcome %in% outcome_keep) %>%
@@ -187,9 +196,21 @@ prep_cloud_pool_setting <- function(draw_level_xy_true,
       AgeCat = factor(AgeCat, levels = c("1-11","12-17","18-64","65+")),
       setting = factor(setting, levels = c("Low","Moderate","High")),
       VE_show = coalesce(VE_label, as.character(VE)),
-      
-      x = ifelse(outcome == "DALY", x_daly_10k, x_10k),
       y = y_10k
+    ) %>%
+    filter(AgeCat %in% age_keep) %>%
+    tidyr::pivot_longer(
+      cols = c(x_10k_base, x_10k_adj),
+      names_to = "risk_type",
+      values_to = "x"
+    ) %>%
+    dplyr::mutate(
+      risk_type = dplyr::recode(
+        risk_type,
+        x_10k_base = "Base risk",
+        x_10k_adj  = "Adjusted risk"
+      ),
+      risk_type = factor(risk_type, levels = c("Base risk", "Adjusted risk"))
     ) %>%
     filter(is.finite(x), is.finite(y), x >= 0, y >= 0) %>%
     filter(!is.na(setting), !is.na(AgeCat), !is.na(VE_show))
@@ -221,7 +242,7 @@ plot_cloud_pool_auto_scale <- function(df,
   # Calculate summary statistics (median and 95% CI)
   if (add_summary) {
     summ <- dd %>%
-      group_by(setting, AgeCat, VE_show) %>%
+      group_by(setting, risk_type, AgeCat, VE_show) %>%
       summarise(
         x_med = median(x_plot, na.rm = TRUE),
         x_lo  = quantile(x_plot, 0.025, na.rm = TRUE),
@@ -250,7 +271,7 @@ plot_cloud_pool_auto_scale <- function(df,
   # Initialize the plot (Merging shape and colour legends)
   p <- ggplot(dd, aes(x = x_plot, y = y_plot, colour = VE_show, shape = VE_show)) +
     geom_point(alpha = alpha_cloud, size = point_size) +
-    facet_grid(setting ~ AgeCat) +
+    facet_grid(setting + risk_type ~ AgeCat) +
     labs(
       title = paste0("Probabilistic cloud: ", target_outcome),
       x = x_label,

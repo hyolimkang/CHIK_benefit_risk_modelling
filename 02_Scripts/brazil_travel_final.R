@@ -572,9 +572,6 @@ psa_out_list <- list()
 
 tic("PSA Total Run")
 
-# only >=18
-all_risk <- all_risk %>% filter(SAE != "NA")
-
 for (d in seq_len(nrow(lhs_sample))) {
   
   # ---- Sample uncertain parameters from LHS ----
@@ -820,8 +817,7 @@ toc()
 psa_df <- dplyr::bind_rows(psa_out_list)
 
 
-save(psa_df, file = "01_Data/psa_df_bra_travel_10ksim.RData")
-save(psa_df, file = "01_Data/psa_df_bra_travel_10ksim_revision.RData")
+save(psa_df, file = "01_Data/psa_df_bra_travel_final.RData")
 
 
 ar_summary_all <- psa_df %>%

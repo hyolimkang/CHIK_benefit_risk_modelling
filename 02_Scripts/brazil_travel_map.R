@@ -6,7 +6,7 @@ br_states <- st_read(file.path(shp_dir, "gadm41_BRA_1.shp"), quiet = TRUE)
 ############################################################
 
 days_levels <- c("7d","14d","30d","90d")
-target_outcome <- "brr_sae"
+target_outcome <- "brr_daly"
 
 # Threshold is no longer used for "minimum days" map
 # because we will show categorised Pr(BRR>1) and let readers decide.
@@ -150,7 +150,7 @@ p_ar2 <- ggplot(states_ar) +
 p_pr_cat <- ggplot(states_pr_full) +
   geom_sf(aes(fill = pr_cat), colour="white", linewidth=0.01) +  # thinner borders
   facet_grid(days ~ age_group) +
-  labs(fill = "Pr(BRR(SAE)>1)") +
+  labs(fill = "Pr(BRR(DALY)>1)") +
   coord_sf(datum = NA) +
   map_theme +
   scale_fill_viridis_d(
@@ -175,7 +175,7 @@ fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal"
 
 fig_one
 
-ggsave("06_Results/brr_brazil_map_fig_travel_sae.pdf", plot = fig_one, width = 11, height = 8, device = cairo_pdf)
+ggsave("06_Results/brr_brazil_map_fig_travel_daly.pdf", plot = fig_one, width = 11, height = 8, device = cairo_pdf)
 
 
 ## this is the end of traveller scenario--------------------------------------------------------------
@@ -185,7 +185,7 @@ ggsave("06_Results/brr_brazil_map_fig_travel_sae.pdf", plot = fig_one, width = 1
 age_levels <- c("1-11","12-17","18-64","65+")
 
 daly_dat <- draw_level_xy_true %>%
-  filter(outcome == "Death") %>%   # IMPORTANT: subset to DALY only
+  filter(outcome == "SAE") %>%   # IMPORTANT: subset to DALY only
   mutate(
     state_key = norm_state(Region),
     AgeCat    = factor(AgeCat, levels = age_levels),
@@ -194,9 +194,9 @@ daly_dat <- draw_level_xy_true %>%
   # Compute BRR safely (avoid division by 0)
   mutate(
     brr_sae = dplyr::if_else(
-      is.na(death_10k) | death_10k == 0,
+      is.na(sae_10k) | sae_10k == 0,
       NA_real_,
-      y_10k / death_10k
+      y_10k / sae_10k
     )
   )
 
@@ -241,7 +241,7 @@ states_pr_full_outbreak$pr_cat <- droplevels(states_pr_full_outbreak$pr_cat)
 p_brr_cat <- ggplot(states_pr_full_outbreak) +
   geom_sf(aes(fill = pr_cat), colour="white", linewidth=0.01) +
   facet_grid(VE_label ~ AgeCat) +
-  labs(fill = "Pr(BRR(Death)>1)") +
+  labs(fill = "Pr(BRR(SAE)>1)") +
   coord_sf(datum = NA) +
   map_theme +
   scale_fill_viridis_d(
@@ -257,7 +257,7 @@ p_brr_cat
 
 fig_one <- (p_ar2 + p_brr_cat) + 
   plot_layout(widths = c(1.1, 4.5), guides = "keep") + 
-  plot_annotation(title = "Benefit-risk ratio of outbreak response immunisation: Pr(BRR(Death)>1) by vaccine protection mechanism and age group", 
+  plot_annotation(title = "Benefit-risk ratio of outbreak response immunisation: Pr(BRR(SAE)>1) by vaccine protection mechanism and age group", 
                   theme = theme(plot.title = element_text(size = 10)) 
   )
 
@@ -265,7 +265,7 @@ fig_one <- fig_one & theme(legend.position = "bottom", legend.box = "horizontal"
            theme(text = element_text(family = "Calibri"))
 fig_one 
 
-ggsave("06_Results/brr_brazil_map_ori_death.pdf", plot = fig_one, width = 12, height = 6, device = cairo_pdf)
+ggsave("06_Results/brr_brazil_map_ori_sae.pdf", plot = fig_one, width = 12, height = 6, device = cairo_pdf)
 
  
 

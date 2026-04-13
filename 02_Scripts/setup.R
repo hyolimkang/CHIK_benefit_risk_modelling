@@ -1,15 +1,17 @@
 # ----------------------------------------------------------
 # Load packages and source functions/other scripts
 # ----------------------------------------------------------
-
 # setwd
-setwd("C:/Users/user/OneDrive - London School of Hygiene and Tropical Medicine/CHIK_benefit_risk")
-setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandTropicalMedicine/CHIK_benefit_risk")
+#setwd("C:/Users/user/OneDrive - London School of Hygiene and Tropical Medicine/CHIK_benefit_risk")
+#setwd("/Users/hyolimkang/Library/CloudStorage/OneDrive-LondonSchoolofHygieneandTropicalMedicine/CHIK_benefit_risk")
+setwd("C:/Users/user/OneDrive - Nagasaki University (1)/CHIK_benefit_risk")
+
 
 # load packages
 pacman::p_load(
   dplyr, tidyr, tidyverse, ggplot2, patchwork, purrr, flextable, sf, raster, officer, viridis,
-  cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern, showtext, writexl, tictoc
+  cowplot, scales, ggpubr, lhs, reshape, truncnorm, knitr, kableExtra, glue, ggpattern, showtext, writexl, tictoc,
+  data.table
 )
 
 # Clean up from previous code / runs
@@ -34,7 +36,11 @@ load("01_Data/all_draws_hosp_true.RData")
 load("01_Data/all_draws_fatal_true.RData")
 load("01_Data/all_draws_daly_true.RData")
 load("01_Data/all_draws_sae_true.RData")
+<<<<<<< HEAD
 load("01_Data/psa_df_bra_travel_final.RData")
+=======
+load("01_Data/psa_df_bra_travel_10ksim.RData")
+>>>>>>> 60c85d5c7387b76e75004a8f83082f8528b3c4f6
 
 all_risk <- read.csv("01_Data/all_risk_four_age.csv")
 
@@ -562,6 +568,56 @@ plot_brr_outcome <- function(br_summarized, bg_grid_optimized,
 }
 
 
+## seropositive vs. seronegative proportion in ORI
+calc_q_seromix_for_scenarios_agecat <- function(sim_region_ve_cov, age_map) {
+  n_scenarios <- length(sim_region_ve_cov)
+  out <- vector("list", n_scenarios)
+  
+  for (sc in seq_len(n_scenarios)) {
+    raw_alloc_array <- sim_region_ve_cov[[sc]]$sim_result$raw_allocation_array
+    vacc_to_S_array <- sim_region_ve_cov[[sc]]$sim_result$vacc_to_S_array
+    
+    stopifnot(all(dim(raw_alloc_array) == dim(vacc_to_S_array)))
+    
+    n_draws <- dim(raw_alloc_array)[3]
+    sc_df <- vector("list", n_draws)
+    
+    for (d in seq_len(n_draws)) {
+      df <- data.frame(
+        age_index = seq_len(dim(raw_alloc_array)[1]),
+        total_vacc_age = rowSums(raw_alloc_array[, , d, drop = FALSE], na.rm = TRUE),
+        seroneg_vacc_age = rowSums(vacc_to_S_array[, , d, drop = FALSE], na.rm = TRUE)
+      ) %>%
+        dplyr::mutate(
+          seropos_vacc_age = pmax(0, total_vacc_age - seroneg_vacc_age)
+        ) %>%
+        dplyr::left_join(age_map, by = "age_index") %>%
+        dplyr::group_by(AgeCat) %>%
+        dplyr::summarise(
+          total_vacc_age = sum(total_vacc_age, na.rm = TRUE),
+          seroneg_vacc_age = sum(seroneg_vacc_age, na.rm = TRUE),
+          seropos_vacc_age = sum(seropos_vacc_age, na.rm = TRUE),
+          .groups = "drop"
+        ) %>%
+        dplyr::mutate(
+          Scenario = sc,
+          draw_id = d,
+          q_seroneg_vacc = ifelse(total_vacc_age > 0, seroneg_vacc_age / total_vacc_age, NA_real_),
+          q_seropos_vacc = ifelse(total_vacc_age > 0, seropos_vacc_age / total_vacc_age, NA_real_)
+        )
+      
+      sc_df[[d]] <- df
+    }
+    
+    out[[sc]] <- dplyr::bind_rows(sc_df)
+  }
+  
+  dplyr::bind_rows(out)
+}
+
+
+
+
 ############################################ end of function ###################
 
 ##------------------------------------------------------------------------------
@@ -579,10 +635,11 @@ A <- randomLHS(n = runs, k = 51 + length(region_key))
 lhs_sample <- matrix(NA_real_, nrow = nrow(A), ncol = ncol(A))
 
 
-# vacc sae and death
+# vacc sae and death Jeffreys prior
 lhs_sample [,1]   <- qbeta(A[,1], shape1 = 6+0.5, shape2 = 32949-6+0.5) # conservative values
 lhs_sample [,2]   <- qbeta(A[,2], shape1 = 19+0.5, shape2 = 18445-19+0.5) # conservative values
-lhs_sample [,3]   <- qbeta(A[,3], shape1 = 0+0.5, shape2 = 32949-0+0.5) # conservative values
+#lhs_sample [,3]   <- qbeta(A[,3], shape1 = 0+0.5, shape2 = 32949-0+0.5) # conservative values
+lhs_sample [,3]   <- 0
 lhs_sample [,4]   <- qbeta(A[,4], shape1 = 1+0.5, shape2 = 18445-1+0.5) # conservative values
 
 # natural hospitalisation (case + 1 / n - case + 1)
@@ -638,7 +695,7 @@ lhs_sample [,43]   <- qbeta (p = A[,43], shape1 = 7.605944, shape2 = 1074.944, n
 lhs_sample [,44]  <- qlnorm (p = A[,44], meanlog = -2.145581, sdlog =  0.1815621, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,45]  <- qlnorm (p = A[,45], meanlog = -0.5430045, sdlog =  0.154684, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,46]  <- qlnorm (p = A[,46], meanlog = -2.262311, sdlog =  0.4746817, lower.tail = TRUE, log.p = FALSE)
-lhs_sample [,47]  <- qlnorm (p = A[,47], meanlog = -1.148854, sdlog = 0.1815042, lower.tail = TRUE, log.p = FALSE)
+lhs_sample [,47]  <- qbeta (p = A[,47], shape1 = 4.581639, shape2 = 9.87148, ncp=0, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,48]  <- qlnorm (p = A[,48], meanlog =  -0.6931472, sdlog =  0.0511915, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,49]  <- qlnorm (p = A[,49], meanlog = 0, sdlog =  0.0511915, lower.tail = TRUE, log.p = FALSE)
 lhs_sample [,50]  <- qlnorm (p = A[,50], meanlog = 0.6931472, sdlog = 0.08380206, lower.tail = TRUE, log.p = FALSE)

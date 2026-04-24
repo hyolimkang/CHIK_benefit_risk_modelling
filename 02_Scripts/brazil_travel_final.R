@@ -572,6 +572,10 @@ psa_out_list <- list()
 
 tic("PSA Total Run")
 
+# only >=18 
+all_risk <- all_risk %>% 
+  dplyr::filter(!is.na(SAE))
+
 for (d in seq_len(nrow(lhs_sample))) {
   
   # ---- Sample uncertain parameters from LHS ----
@@ -702,7 +706,7 @@ for (d in seq_len(nrow(lhs_sample))) {
           nonhosp_symp_nv_10k <- pmax(0, symp_nv_10k - res$risk_nv_hosp)
           nonhosp_symp_v_10k  <- pmax(0, symp_v_10k  - res$risk_v_hosp)
           
-          dz_nv <- compute_daly_one(
+          dz_nv <- compute_daly_one_age_specific(
             age_group = age,
             deaths_10k = res$risk_nv_death,
             hosp_10k = res$risk_nv_hosp,
@@ -712,7 +716,7 @@ for (d in seq_len(nrow(lhs_sample))) {
             draw_pars = draw_pars
           )
           
-          dz_v <- compute_daly_one(
+          dz_v <- compute_daly_one_age_specific(
             age_group = age,
             deaths_10k = res$risk_v_death,
             hosp_10k = res$risk_v_hosp,
@@ -722,7 +726,7 @@ for (d in seq_len(nrow(lhs_sample))) {
             draw_pars = draw_pars
           )
           
-          sae <- compute_daly_one(
+          sae <- compute_daly_one_age_specific(
             age_group = age,
             deaths_10k = 0, hosp_10k = 0, nonhosp_symp_10k = 0, symp_10k = 0,
             sae_10k = 1e4 * p_sae_vacc,
@@ -816,8 +820,9 @@ toc()
 # Final combined dataframe
 psa_df <- dplyr::bind_rows(psa_out_list)
 
-
 save(psa_df, file = "01_Data/psa_df_bra_travel_final.RData")
+save(psa_df, file = "01_Data/psa_df_bra_travel_final_revision_0417_final.RData")
+save(psa_df, file = "01_Data/psa_df_bra_travel_final_revision_0424_final.RData")
 
 
 ar_summary_all <- psa_df %>%

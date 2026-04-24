@@ -30,7 +30,8 @@ make_cloud_long <- function(psa_df, setting_key,
     ) %>%
     dplyr::select(draw, state, setting, days, age_group, outcome, caused_10k, prevented_10k)
   
-  # DALY cloud (not per-10k; but we keep the same column names)
+  # DALY cloud: daly_sae / daly_averted come from compute_daly_one(), which only
+  # uses *_10k inputs (same per-10,000 scale as death / SAE in setup.R).
   df_daly <- psa_df %>%
     mutate(
       setting = unname(setting_key[state]),
@@ -91,8 +92,8 @@ plot_prob_cloud <- function(cloud_df, target_outcome,
       )
   }
   
-  # Define axis labels
-  label_suffix <- ifelse(target_outcome == "DALY", "", " (per 10,000 vaccinated individuals)")
+  # Define axis labels (all outcomes on per-10,000 vaccinated scale)
+  label_suffix <- " (per 10,000 vaccinated individuals)"
   x_label <- paste0(target_outcome, "s caused by vaccination", label_suffix)
   y_label <- paste0(target_outcome, "s prevented by vaccination", label_suffix)
   
@@ -112,7 +113,7 @@ plot_prob_cloud <- function(cloud_df, target_outcome,
     geom_point(alpha = alpha_cloud, size = point_size) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40") +
     facet_grid(setting ~ days, scales = "free_y") +
-    labs(title = paste0("Probabilistic cloud: ", target_outcome),
+    labs(title = paste0("Benefit-risk: ", target_outcome),
          x = x_label, y = y_label, colour = "Age group", shape = "Age group") +
     theme_bw() +
     theme(panel.grid = element_blank())
@@ -271,7 +272,7 @@ plot_cloud_pool_auto_scale <- function(df,
   # Initialize the plot (Merging shape and colour legends)
   p <- ggplot(dd, aes(x = x_plot, y = y_plot, colour = VE_show, shape = VE_show)) +
     geom_point(alpha = alpha_cloud, size = point_size) +
-    facet_grid(setting + risk_type ~ AgeCat) +
+    ggh4x::facet_nested(risk_type ~ setting + AgeCat, nest_line = element_line(colour = "grey40")) +
     labs(
       title = paste0("Probabilistic cloud: ", target_outcome),
       x = x_label,
@@ -332,7 +333,7 @@ p_death <-plot_cloud_pool_auto_scale(cloud_pool, "Death", eps_log = 1e-6) +
     axis.text.x = element_text(size = 8, angle = 30, hjust = 1)
   )
 
-ggsave("06_Results/brr_ori_daly_cloud.pdf", plot = p_daly, width = 10, height = 7, device = cairo_pdf)
+ggsave("06_Results/brr_ori_daly_cloud.pdf", plot = p_daly, width = 14, height = 6, device = cairo_pdf)
 ggsave("06_Results/brr_ori_death_cloud.pdf", plot = p_death, width = 10, height = 7, device = cairo_pdf)
 ggsave("06_Results/brr_ori_sae_cloud.pdf", plot = p_sae, width = 10, height = 7, device = cairo_pdf)
 

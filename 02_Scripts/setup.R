@@ -24,6 +24,7 @@ load("01_Data/lhs_sample_young.RData")
 load("01_Data/le_sample.RData")
 load("01_Data/chikv_fatal_hosp_rate.RData")
 load("01_Data/sim_results_vc_ixchiq_model.RData")
+load("01_Data/sim_results_vc_ixchiq_model_revision.RData")
 load("01_Data/combined_nnv_national_age_ixchiq.RData")
 load("01_Data/combined_nnv_df_region_coverage_model.RData")
 load("01_Data/rho_df.RData")
@@ -31,14 +32,15 @@ load("01_Data/pop_by_state.RData")
 load("01_Data/posterior_list.RData")
 load("01_Data/preui_all.RData")
 load("01_Data/postsim_vc_ixchiq_model.RData")
+load("01_Data/postsim_vc_ixchiq_model_revision.RData")
 load("01_Data/all_draws_ix_true.RData")
 load("01_Data/all_draws_hosp_true.RData")
 load("01_Data/all_draws_fatal_true.RData")
 load("01_Data/all_draws_daly_true.RData")
 load("01_Data/all_draws_sae_true.RData")
-load("01_Data/psa_df_bra_travel_final.RData")
-load("01_Data/psa_df_bra_travel_10ksim.RData")
-load("01_Data/psa_df_bra_travel_10ksim_revision.RData")
+load("01_Data/psa_df_bra_travel_10ksim_revision.RData") # final
+load("01_Data/psa_df_bra_travel_final_revision_0424_final.RData") 
+load("01_Data/setting_key.RData")
 
 all_risk <- read.csv("01_Data/all_risk_four_age.csv")
 
@@ -359,7 +361,7 @@ compute_daly_one <- function(age_group,
   p_chr12m <- draw_pars$chr12m
   p_chr30m <- draw_pars$chr30m
   
-  total_p <- p_acute + p_subac + p_chr6m + p_chr12m + p_chr30m
+  total_p  <- p_acute + p_subac + p_chr6m + p_chr12m + p_chr30m
   p_acute  <- p_acute  / total_p
   p_subac  <- p_subac  / total_p
   p_chr6m  <- p_chr6m  / total_p
@@ -622,7 +624,7 @@ calc_q_seromix_for_scenarios_agecat <- function(sim_region_ve_cov, age_map) {
 ## LHS Samples 
 ##------------------------------------------------------------------------------
 set.seed(123)
-runs = 10000
+runs = 3000
 region_key <- c(
   "Ceará"="ce","Bahia"="bh","Paraíba"="pa","Pernambuco"="pn",
   "Rio Grande do Norte"="rg","Piauí"="pi","Tocantins"="tc",
@@ -760,11 +762,23 @@ cols <- c(
   "fatal_nonhosp"
 )
 
-draws_list <- split(AR_draw_by_region$AR_S0, AR_draw_by_region$Region)
+ar_empirical_source <- "linear_capped"
+ar_linear_cap <- 0.99
+
+draws_list_lin_S0 <- split(AR_draw_by_region$AR_lin_S0, AR_draw_by_region$Region)
+
+draws_list <- switch(
+  ar_empirical_source,
+  #prob = draws_list_prob_S0,
+  linear = draws_list_lin_S0,
+  linear_capped = lapply(draws_list_lin_S0, function(x) pmin(x, ar_linear_cap)),
+  stop("Unknown ar_empirical_source: ", ar_empirical_source)
+)
 
 eps <- 1e-12
 draws_list <- lapply(draws_list, function(x){
   x <- x[is.finite(x)]
+  x <- x[x > 0]
   pmin(pmax(x, eps), 1 - eps)
 })
 

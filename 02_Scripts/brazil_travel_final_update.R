@@ -1,3 +1,4 @@
+## old## 
 setting_key <- c(
   "Ceará"             = "High",
   "Bahia"             = "Low",
@@ -12,6 +13,33 @@ setting_key <- c(
   "Goiás"             = "Low"
 )
 
+# AR based key
+# psa_df must contain: region, draw_id, AR_total
+ar_class_from_psa <- psa_df %>%
+  group_by(state) %>%
+  summarise(
+    p_low = mean(AR_total <= 0.01, na.rm = TRUE),
+    p_moderate = mean(AR_total > 0.01 & AR_total <= 0.05, na.rm = TRUE),
+    p_high = mean(AR_total > 0.05, na.rm = TRUE),
+    AR_median = median(AR_total, na.rm = TRUE),
+    AR_lo = quantile(AR_total, 0.025, na.rm = TRUE),
+    AR_hi = quantile(AR_total, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    category_maxprob = case_when(
+      p_high >= p_moderate & p_high >= p_low ~ "High",
+      p_moderate >= p_high & p_moderate >= p_low ~ "Moderate",
+      TRUE ~ "Low"
+    )
+  )
+
+setting_key <- ar_class_from_psa %>%
+  select(state, category_maxprob) %>%
+  #select(state, category) %>%
+  deframe()
+
+save(setting_key, file = "01_Data/setting_key.RData")
 
 
 make_brr_long <- function(psa_df, setting_key) {
@@ -225,7 +253,7 @@ ceac_t1 <- ceac_df %>%
     days = factor(days, levels = c("7d","14d","30d","90d")),
     setting = factor(setting, levels = c("Low","Moderate","High"))
   ) %>%
-  dplyr::select(outcome, setting, age_group, days, p_accept, n, threshold)
+  dplyr::select(outcome, setting, age_group, days, p_accept, threshold)
 
 ceac_t1_wide <- ceac_t1 %>%
   mutate(p_fmt = sprintf("%.0f%%", 100 * p_accept)) %>%
@@ -298,7 +326,7 @@ ar_wide_ft <- ar_long_fmt %>%
     values_from = c(Benefit, Risk, BRR),
     names_glue  = "{days}_{.value}"
   ) %>%
-  rename(
+  dplyr::rename(
     Outcome     = outcome,
     Setting     = setting,
     `Age group` = age_group
@@ -363,7 +391,7 @@ p_accept_wide_spread <- ceac_df %>%
   dplyr::select(outcome, setting, age_group, days, prob_fmt) %>%
   # 중복 있으면 첫번째만
   distinct(outcome, setting, age_group, days, .keep_all = TRUE) %>%
-  rename(Outcome = outcome, Setting = setting, `Age group` = age_group) %>%
+  dplyr::rename(Outcome = outcome, Setting = setting, `Age group` = age_group) %>%
   pivot_wider(
     names_from  = days,
     values_from = prob_fmt,
@@ -400,7 +428,7 @@ ar_long_table <- ar_wide_ft %>%
     Setting = factor(Setting, levels = c("High","Moderate","Low"))
   ) %>%
   arrange(Outcome, Setting, `Age group`, days) %>%
-  rename(`Travel duration` = days)
+  dplyr::rename(`Travel duration` = days)
 
 ar_long_table <- ar_long_table %>%
   mutate(Prob = ifelse(is.na(Prob) | Prob == "N/A", "beneficial", Prob))

@@ -7,14 +7,23 @@
 # 03) Shared helper functions (rho scaling)
 # 04) Hospitalisation draws
 # 05) Fatal draws
-# 06) DALY draws
+# 06) DALY draws  <-- v3: AGE-SPECIFIC chronic proportions on benefit side
 # 07) SAE draws and persistence of core draw objects
 # 08) BRR pipeline (draw-level benefit vs risk; no object mixing)
 #
-# NOTE:
-# Functions are intentionally defined before their first use throughout the
-# script. For R scripts sourced top-to-bottom, this prevents "object not found"
-# issues during execution and makes debugging easier.
+# NOTE (v3 vs v2):
+# The ONLY difference from v2 is in SECTION 06 (DALY draws / benefit side):
+#   * make_daly_draws            -> make_daly_draws_age
+#   * calc_total_daly_draws      -> calc_total_daly_draws_age
+#   * calc_total_daly_draws_rho  -> calc_total_daly_draws_rho_age
+#   * all_draws_daly_true now takes age-specific subac_prop / chr_prop vectors
+#     (length = n_age_bins = 20) and applies u40 props to bins 1-10 (ages 0-39)
+#     and o40 props to bins 11-20 (ages 40-89). This matches the SAE-side
+#     age-specific treatment already in v2 via compute_daly_one_age_specific(),
+#     restoring benefit/risk consistency.
+#
+# Prerequisites: source('02_Scripts/setup.R') and
+#                source('02_Scripts/setup_age_props.R') before this script.
 # =============================================================================
 
 # =============================================================================
@@ -94,19 +103,6 @@ names(preui_all) <- c("Ceará","Alagoas", "Bahia", "Goiás",
                       "Minas Gerais", "Paraíba", "Piauí",
                       "Pernambuco", "Rio Grande do Norte", 
                       "Sergipe", "Tocantins")
-setting_key <- c(
-  "Ceará"             = "High",
-  "Bahia"             = "Low",
-  "Paraíba"           = "High",
-  "Pernambuco"        = "Moderate",
-  "Rio Grande do Norte" = "Low",
-  "Piauí"             = "High",
-  "Tocantins"         = "Moderate",
-  "Alagoas"           = "High",
-  "Minas Gerais"      = "Low",
-  "Sergipe"           = "Low",
-  "Goiás"             = "Low"
-)
 
 # Step 2.2) Utility to aggregate draw-level pre/post burden totals
 calc_total_impact_draws <- function(pre_list, post_arr) {
@@ -424,31 +420,47 @@ all_draws_fatal_true <- purrr::imap_dfr(postsim_vc_ixchiq_model, function(region
 # SECTION 06. DALY draws
 # =============================================================================
 # Step 6.1) Convert symptomatic burden to DALY components
-make_daly_draws <- function(symp_list, hosp_rate, fatal_rate, nh_fatal_rate,
-                            dw_hosp, dw_nonhosp, dw_chronic,
-                            dur_acute, dur_subacute, dur_chronic,
-                            dw_subacute, subac_prop, chr_prop,
-                            le_left_vec) {
+# v3: age-specific version. subac_prop and chr_prop are now VECTORS of length
+# n_age_bins (= length of the first dimension of symp_matrix). u40 vs o40 is
+# resolved OUTSIDE this function by the caller (see build_daly_prop_vecs()).
+make_daly_draws_age <- function(symp_list, hosp_rate, fatal_rate, nh_fatal_rate,
+                                dw_hosp, dw_nonhosp, dw_chronic,
+                                dur_acute, dur_subacute, dur_chronic,
+                                dw_subacute,
+                                subac_prop_vec, chr_prop_vec,
+                                le_left_vec) {
   lapply(symp_list, function(symp_matrix) {
-    hospitalised       <- sweep(symp_matrix, 1, hosp_rate, `*`)
-    non_hospitalised   <- symp_matrix - hospitalised
-    fatal              <- sweep(hospitalised, 1, fatal_rate, `*`) +
+    n_age <- nrow(symp_matrix)
+    stopifnot(
+      length(subac_prop_vec) == n_age,
+      length(chr_prop_vec)   == n_age,
+      length(le_left_vec)    == n_age
+    )
+
+    hospitalised     <- sweep(symp_matrix, 1, hosp_rate, `*`)
+    non_hospitalised <- symp_matrix - hospitalised
+    fatal <- sweep(hospitalised, 1, fatal_rate, `*`) +
       sweep(non_hospitalised, 1, nh_fatal_rate, `*`)
-    
-    yld_acute    <- (hospitalised * dw_hosp     * dur_acute) +
+
+    # Acute YLD (age-independent dw / duration, as in v2)
+    yld_acute <- (hospitalised     * dw_hosp    * dur_acute) +
       (non_hospitalised * dw_nonhosp * dur_acute)
-    yld_subacute <- (hospitalised * subac_prop * dw_subacute * dur_subacute) +
-      (non_hospitalised * chr_prop * dw_subacute * dur_subacute)
-    yld_chronic  <- (hospitalised * chr_prop * dw_chronic * dur_chronic) +
-      (non_hospitalised * chr_prop * dw_chronic * dur_chronic)
-    
+
+    # Subacute YLD: subac_prop applied to hospitalised rows, chr_prop to
+    # non-hospitalised (preserves v2 convention; only props are now age vectors)
+    yld_subacute <-
+      sweep(hospitalised,     1, subac_prop_vec, `*`) * dw_subacute * dur_subacute +
+      sweep(non_hospitalised, 1, chr_prop_vec,   `*`) * dw_subacute * dur_subacute
+
+    # Chronic YLD: chr_prop applied to both, per-age
+    yld_chronic <-
+      sweep(hospitalised,     1, chr_prop_vec, `*`) * dw_chronic * dur_chronic +
+      sweep(non_hospitalised, 1, chr_prop_vec, `*`) * dw_chronic * dur_chronic
+
     yld_total <- yld_acute + yld_subacute + yld_chronic
-    
-    # Precomputed life expectancy by age group
-    yll <- sweep(fatal, 1, le_left_vec, `*`)
-    
-    daly_tot <- yld_total + yll
-    
+    yll       <- sweep(fatal, 1, le_left_vec, `*`)
+    daly_tot  <- yld_total + yll
+
     list(
       hosp     = hospitalised,
       fatal    = fatal,
@@ -457,6 +469,93 @@ make_daly_draws <- function(symp_list, hosp_rate, fatal_rate, nh_fatal_rate,
       daly_tot = daly_tot
     )
   })
+}
+
+# Backward-compatible alias: if someone calls the old name, dispatch to the
+# age-aware version by broadcasting scalars to length-n_age vectors. This
+# preserves behaviour of v2 exactly when scalars are supplied.
+make_daly_draws <- function(symp_list, hosp_rate, fatal_rate, nh_fatal_rate,
+                            dw_hosp, dw_nonhosp, dw_chronic,
+                            dur_acute, dur_subacute, dur_chronic,
+                            dw_subacute, subac_prop, chr_prop,
+                            le_left_vec) {
+  n_age <- length(le_left_vec)
+  if (length(subac_prop) == 1) subac_prop <- rep(subac_prop, n_age)
+  if (length(chr_prop)   == 1) chr_prop   <- rep(chr_prop,   n_age)
+  make_daly_draws_age(
+    symp_list      = symp_list,
+    hosp_rate      = hosp_rate,
+    fatal_rate     = fatal_rate,
+    nh_fatal_rate  = nh_fatal_rate,
+    dw_hosp        = dw_hosp,
+    dw_nonhosp     = dw_nonhosp,
+    dw_chronic     = dw_chronic,
+    dur_acute      = dur_acute,
+    dur_subacute   = dur_subacute,
+    dur_chronic    = dur_chronic,
+    dw_subacute    = dw_subacute,
+    subac_prop_vec = subac_prop,
+    chr_prop_vec   = chr_prop,
+    le_left_vec    = le_left_vec
+  )
+}
+
+# -------------------------------------------------------------------------
+# Helper: build subac / chr proportion vectors of length n_age.
+#
+# CRITICAL (v3 bug fix): v2 benefit used medians from `lhs_sample_young`
+# (a SEPARATE LHS object loaded from 01_Data/lhs_sample_young.RData), NOT
+# from `lhs_sample`. These two objects have different Beta draws and
+# different medians, so mixing them silently would shift BRR. To preserve
+# v2 behaviour exactly for u40 bins (0-39y), this helper pulls u40 medians
+# from `lhs_sample_young` and only the new o40 medians from `lhs_sample`
+# (which setup_age_props.R extended with *_o40 columns).
+#
+#   Bins 1-10 (ages 0-39)  -> u40 = median(lhs_sample_young$*)     [== v2]
+#   Bins 11-20 (ages 40-89) -> o40 = median(lhs_sample$*_o40)       [v3 new]
+# -------------------------------------------------------------------------
+build_daly_prop_vecs <- function(n_age = 20, u40_cutoff_bin = 10L) {
+  stopifnot(
+    exists("lhs_sample_young", envir = globalenv()),
+    exists("lhs_sample",       envir = globalenv()),
+    all(c("subac_o40","chr6m_o40","chr12m_o40","chr30m_o40") %in%
+          colnames(lhs_sample))
+  )
+
+  # u40 (bins 1-10): match v2 exactly -> use lhs_sample_young medians
+  subac_u40 <- stats::median(lhs_sample_young$subac, na.rm = TRUE)
+  chr_u40   <- stats::median(lhs_sample_young$chr6m,  na.rm = TRUE) +
+    stats::median(lhs_sample_young$chr12m, na.rm = TRUE) +
+    stats::median(lhs_sample_young$chr30m, na.rm = TRUE)
+
+  # o40 (bins 11-20): new sampling from setup_age_props.R (user-supplied
+  # Beta parameters for 65+/>40 population)
+  subac_o40 <- stats::median(lhs_sample$subac_o40, na.rm = TRUE)
+  chr_o40   <- stats::median(lhs_sample$chr6m_o40,  na.rm = TRUE) +
+    stats::median(lhs_sample$chr12m_o40, na.rm = TRUE) +
+    stats::median(lhs_sample$chr30m_o40, na.rm = TRUE)
+
+  # Bin mapping (matches age_groups definition above):
+  # 1=0-1, 2=1-4, 3=5-9, 4=10-11, 5=12-17,
+  # 6=18-19, 7=20-24, 8=25-29, 9=30-34, 10=35-39,       <-- u40
+  # 11=40-44, 12=45-49, 13=50-54, 14=55-59, 15=60-64,   <-- o40 (40-64)
+  # 16=65-69, 17=70-74, 18=75-79, 19=80-84, 20=85-89    <-- o40 (65+)
+  idx_o40 <- seq.int(u40_cutoff_bin + 1L, n_age)
+  subac_vec <- rep(subac_u40, n_age); subac_vec[idx_o40] <- subac_o40
+  chr_vec   <- rep(chr_u40,   n_age); chr_vec[idx_o40]   <- chr_o40
+
+  list(
+    subac_prop_vec = subac_vec,
+    chr_prop_vec   = chr_vec,
+    meta = list(
+      subac_u40 = subac_u40, subac_o40 = subac_o40,
+      chr_u40   = chr_u40,   chr_o40   = chr_o40,
+      u40_cutoff_bin = u40_cutoff_bin,
+      n_age = n_age,
+      u40_source = "lhs_sample_young (matches v2)",
+      o40_source = "lhs_sample$*_o40 (setup_age_props.R)"
+    )
+  )
 }
 le_by_age <- function(age_numeric) {
   if (age_numeric <= 1) return(quantile(le_sample$le_1, 0.5))
@@ -476,7 +575,8 @@ calc_total_daly_draws <- function(pre_list, post_arr,
                                   dur_acute, dur_subacute, dur_chronic,
                                   dw_subacute, subac_prop, chr_prop,
                                   le_left_vec) {
-  # Pre
+  # v3: subac_prop / chr_prop are now accepted as EITHER scalar (back-compat)
+  # or length-n_age vectors (age-specific). make_daly_draws() dispatches.
   pre_conv <- make_daly_draws(pre_list, hosp_rate, fatal_rate, nh_fatal_rate,
                               dw_hosp, dw_nonhosp, dw_chronic,
                               dur_acute, dur_subacute, dur_chronic,
@@ -487,7 +587,7 @@ calc_total_daly_draws <- function(pre_list, post_arr,
   if (length(dim(pre_arr)) == 2) {
     pre_arr <- array(pre_arr, dim = c(dim(pre_arr), 1))
   }
-  
+
   # Post
   post_list <- lapply(seq(dim(post_arr)[3]), function(i) post_arr[ , , i])
   post_conv <- make_daly_draws(post_list, hosp_rate, fatal_rate, nh_fatal_rate,
@@ -497,12 +597,12 @@ calc_total_daly_draws <- function(pre_list, post_arr,
                                le_left_vec)
   post_daly_list <- lapply(post_conv, `[[`, "daly_tot")
   post_arr <- simplify2array(post_daly_list)
-  
+
   # Align
   n_draws <- min(dim(pre_arr)[3], dim(post_arr)[3])
   pre_arr  <- pre_arr[ , , 1:n_draws]
   post_arr <- post_arr[ , , 1:n_draws]
-  
+
   total_pre  <- apply(pre_arr,  3, sum, na.rm = TRUE)
   total_post <- apply(post_arr, 3, sum, na.rm = TRUE)
   
@@ -554,50 +654,81 @@ calc_total_daly_draws_rho <- function(pre_list, post_arr,
 
 set.seed(1)
 
-# Step 6.2) Build rho-adjusted DALY draw table
+# v3: build age-specific subac / chr proportion vectors ONCE (uses global
+# lhs_sample extended by 02_Scripts/setup_age_props.R).
+.daly_prop_vecs <- build_daly_prop_vecs(n_age = length(le_left_vec),
+                                        u40_cutoff_bin = 10L)
+.subac_prop_vec <- .daly_prop_vecs$subac_prop_vec
+.chr_prop_vec   <- .daly_prop_vecs$chr_prop_vec
+
+message("[v3] DALY benefit age-specific props built:")
+message(sprintf("  subac u40=%.4f  o40=%.4f", .daly_prop_vecs$meta$subac_u40,
+                .daly_prop_vecs$meta$subac_o40))
+message(sprintf("  chr   u40=%.4f  o40=%.4f", .daly_prop_vecs$meta$chr_u40,
+                .daly_prop_vecs$meta$chr_o40))
+message(sprintf("  u40 bins = 1..%d (ages 0-39) [source: %s]",
+                .daly_prop_vecs$meta$u40_cutoff_bin,
+                .daly_prop_vecs$meta$u40_source))
+message(sprintf("  o40 bins = %d..%d (ages 40+) [source: %s]",
+                .daly_prop_vecs$meta$u40_cutoff_bin + 1L,
+                .daly_prop_vecs$meta$n_age,
+                .daly_prop_vecs$meta$o40_source))
+
+# Sanity check: compare with v2 scalar medians (should match u40 values exactly)
+.v2_subac_med <- stats::median(lhs_sample_young$subac, na.rm = TRUE)
+.v2_chr_med   <- stats::median(lhs_sample_young$chr6m,  na.rm = TRUE) +
+  stats::median(lhs_sample_young$chr12m, na.rm = TRUE) +
+  stats::median(lhs_sample_young$chr30m, na.rm = TRUE)
+message(sprintf("[v3] Sanity vs v2: subac_u40 - v2_median = %.6f  (should be 0)",
+                .daly_prop_vecs$meta$subac_u40 - .v2_subac_med))
+message(sprintf("[v3] Sanity vs v2: chr_u40   - v2_median = %.6f  (should be 0)",
+                .daly_prop_vecs$meta$chr_u40 - .v2_chr_med))
+
+# Step 6.2) Build rho-adjusted DALY draw table (age-specific benefit side)
 all_draws_daly_true <- purrr::imap_dfr(postsim_vc_ixchiq_model, function(region_list, region_name) {
-  
+
   pre_list <- preui_all[[region_name]]$sim_results_list_rawsymp
-  
+
   # region rho pool
   rho_pool_region <- posterior_list[[region_name]]$rho
   rho_pool_region <- as.numeric(rho_pool_region)
   rho_pool_region <- rho_pool_region[is.finite(rho_pool_region) & rho_pool_region > 0]
-  
+
   if (length(rho_pool_region) == 0) {
     stop("No valid rho draws for region: ", region_name)
   }
-  
+
   purrr::imap_dfr(region_list, function(ve_list, ve_name) {
     purrr::imap_dfr(ve_list, function(cov_list, cov_name) {
       purrr::imap_dfr(cov_list$scenario_result, function(scen, scen_id) {
-        
+
         post_arr <- scen$sim_result$age_array_raw_symp
-        
+
         n_draws <- min(length(pre_list), dim(post_arr)[3])
-        
+
         rho_vec <- sample(rho_pool_region, size = n_draws, replace = TRUE)
-        
+
         draw_totals <- calc_total_daly_draws_rho(
           pre_list, post_arr,
           hosp_rate     = hosp,
           fatal_rate    = fatal,
           nh_fatal_rate = nh_fatal,
-          
+
           dw_hosp       = quantile(lhs_sample_young$dw_hosp, 0.5),
           dw_nonhosp    = quantile(lhs_sample_young$dw_nonhosp, 0.5),
           dw_chronic    = quantile(lhs_sample_young$dw_chronic, 0.5),
-          
+
           dur_acute     = quantile(lhs_sample_young$dur_acute, 0.5),
           dur_subacute  = quantile(lhs_sample_young$dur_subac, 0.5),
           dur_chronic   = quantile(lhs_sample_young$dur_chronic, 0.5),
-          
+
           dw_subacute   = quantile(lhs_sample_young$dw_subac, 0.5),
-          subac_prop    = quantile(lhs_sample_young$subac, 0.5),
-          chr_prop      = (quantile(lhs_sample_young$chr6m, 0.5) +
-                             quantile(lhs_sample_young$chr12m, 0.5) +
-                             quantile(lhs_sample_young$chr30m, 0.5)),
-          
+
+          # ---- v3 CHANGE: age-specific vectors (length = n_age) ----
+          subac_prop    = .subac_prop_vec,
+          chr_prop      = .chr_prop_vec,
+          # ---- end v3 change ----
+
           le_left_vec   = le_left_vec,
           rho_vec       = rho_vec
         )
@@ -1650,4 +1781,175 @@ plot_death <- plot_brr_ceac_outbreak_ve(ceac_ob, "Death")+
     plot.tag          = element_text(face = "bold", size = 16),
     plot.tag.position = c(0, 1)
   )
+
+# =============================================================================
+# SECTION 09. DIAGNOSTIC - age-bin share of averted DALY by Setting
+# =============================================================================
+# Purpose: verify the hypothesis that the v2 -> v3 benefit change is large in
+# LOW settings because a bigger fraction of adult averted cases falls into the
+# o40 bins (ages 40-64 + 65+), vs HIGH settings where 18-39 (u40) dominates.
+#
+# For each Region (-> Setting), VE, Coverage, Scenario we compute
+#   averted_by_bin[a] = mean_over_draws( sum_weeks(pre_rho[a,,]) -
+#                                        sum_weeks(post_rho[a,,]) )
+# and then report the share of total averted cases that falls into u40 bins
+# (1-10, ages 0-39) vs o40 bins (11-20, ages 40-89). We also break out within
+# each AgeCat (1-11 / 12-17 / 18-64 / 65+) so you can see WHERE inside 18-64
+# the cases sit (18-39 vs 40-64).
+# -----------------------------------------------------------------------------
+
+age_bin_labels <- c(
+  "0-1","1-4","5-9","10-11","12-17",
+  "18-19","20-24","25-29","30-34","35-39",
+  "40-44","45-49","50-54","55-59","60-64",
+  "65-69","70-74","75-79","80-84","85-89"
+)
+
+# AgeCat mapping consistent with ORI scenario definitions
+agecat_by_bin <- c(
+  "0-1","1-11","1-11","1-11","12-17",        # bins 1-5
+  "18-64","18-64","18-64","18-64","18-64",   # bins 6-10  (18-39, u40)
+  "18-64","18-64","18-64","18-64","18-64",   # bins 11-15 (40-64, o40)
+  "65+","65+","65+","65+","65+"              # bins 16-20 (o40)
+)
+u40_flag_by_bin <- c(rep("u40", 10), rep("o40", 10))
+
+# Scenario_X -> targeted AgeCat (for filtering to the vaccinated age group)
+scenario_to_agecat <- c(
+  Scenario_1 = "1-11",
+  Scenario_2 = "12-17",
+  Scenario_3 = "18-64",
+  Scenario_4 = "65+"
+)
+
+# Helper: averted cases per age bin, averaged over draws, for ONE
+# region x VE x Coverage x Scenario combination. rho scaling is applied so
+# this is on the "true" (under-reported-adjusted) scale that enters DALY.
+averted_bin_one <- function(pre_list, post_arr, rho_vec) {
+  n_draws <- min(length(pre_list), dim(post_arr)[3], length(rho_vec))
+  pre_list <- pre_list[seq_len(n_draws)]
+  post_arr <- post_arr[,, seq_len(n_draws), drop = FALSE]
+  rho_vec  <- rho_vec[seq_len(n_draws)]
+
+  # rho scaling (mirror of scale_symp_by_rho_pre / post used in v3)
+  pre_true  <- scale_symp_by_rho_pre(pre_list, rho_vec)
+  post_true <- scale_symp_by_rho_post(post_arr, rho_vec)
+
+  n_age <- nrow(pre_true[[1]])
+  averted_mat <- matrix(0, nrow = n_age, ncol = n_draws)
+  for (i in seq_len(n_draws)) {
+    averted_mat[, i] <- rowSums(pre_true[[i]], na.rm = TRUE) -
+      rowSums(post_true[,, i], na.rm = TRUE)
+  }
+  rowMeans(averted_mat, na.rm = TRUE)  # length n_age
+}
+
+set.seed(1)  # match rho sampling seed used for all_draws_daly_true
+
+diagnostic_averted_bin <- purrr::imap_dfr(
+  postsim_vc_ixchiq_model,
+  function(region_list, region_name) {
+    pre_list <- preui_all[[region_name]]$sim_results_list_rawsymp
+    rho_pool_region <- as.numeric(posterior_list[[region_name]]$rho)
+    rho_pool_region <- rho_pool_region[is.finite(rho_pool_region) &
+                                         rho_pool_region > 0]
+
+    purrr::imap_dfr(region_list, function(ve_list, ve_name) {
+      purrr::imap_dfr(ve_list, function(cov_list, cov_name) {
+        purrr::imap_dfr(cov_list$scenario_result, function(scen, scen_id) {
+          post_arr <- scen$sim_result$age_array_raw_symp
+          n_draws  <- min(length(pre_list), dim(post_arr)[3])
+          rho_vec  <- sample(rho_pool_region, size = n_draws, replace = TRUE)
+
+          averted_vec <- averted_bin_one(pre_list, post_arr, rho_vec)
+
+          tibble(
+            Region   = region_name,
+            Setting  = unname(setting_key[region_name]),
+            VE       = ve_name,
+            Coverage = cov_name,
+            Scenario = scen_id,
+            bin      = seq_along(averted_vec),
+            age_bin  = age_bin_labels[seq_along(averted_vec)],
+            AgeCat_bin = agecat_by_bin[seq_along(averted_vec)],
+            u40_flag = u40_flag_by_bin[seq_along(averted_vec)],
+            averted  = averted_vec
+          )
+        })
+      })
+    })
+  }
+)
+
+# ---- Q1: In the targeted AgeCat of each Scenario, what fraction of averted
+#          cases falls in u40 vs o40 bins, by Setting? -----------------------
+share_u40_o40_within_targeted_agecat <- diagnostic_averted_bin %>%
+  dplyr::mutate(target_AgeCat = unname(scenario_to_agecat[Scenario])) %>%
+  dplyr::filter(AgeCat_bin == target_AgeCat) %>%   # only bins inside vaccinated AgeCat
+  dplyr::group_by(Setting, Scenario, AgeCat_bin, VE, Coverage, u40_flag) %>%
+  dplyr::summarise(averted = sum(averted, na.rm = TRUE), .groups = "drop_last") %>%
+  dplyr::mutate(share = averted / sum(averted, na.rm = TRUE)) %>%
+  dplyr::ungroup() %>%
+  dplyr::arrange(Scenario, Setting, VE, Coverage, u40_flag)
+
+# Averaged across VE x Coverage so you see one clean number per Setting x AgeCat
+share_u40_o40_summary <- share_u40_o40_within_targeted_agecat %>%
+  dplyr::group_by(Setting, Scenario, AgeCat_bin, u40_flag) %>%
+  dplyr::summarise(share = mean(share, na.rm = TRUE), .groups = "drop") %>%
+  tidyr::pivot_wider(names_from = u40_flag, values_from = share,
+                     values_fill = 0) %>%
+  dplyr::mutate(
+    Setting = factor(Setting, levels = c("Low", "Moderate", "High"))
+  ) %>%
+  dplyr::arrange(Scenario, Setting)
+
+message("\n[v3 DIAG] Share of averted cases inside each vaccinated AgeCat ",
+        "(u40 bins vs o40 bins) by Setting:")
+print(share_u40_o40_summary, n = Inf)
+
+# ---- Q2: Effective chr_prop for each Setting x AgeCat, implied by bin-level
+#          case weighting (this is the 'effective' number v3 uses instead of
+#          v2's uniform u40 median) --------------------------------------------
+chr_u40_med <- .daly_prop_vecs$meta$chr_u40
+chr_o40_med <- .daly_prop_vecs$meta$chr_o40
+
+effective_chr_prop <- share_u40_o40_summary %>%
+  dplyr::mutate(
+    chr_prop_v2 = chr_u40_med,
+    chr_prop_v3 = u40 * chr_u40_med + o40 * chr_o40_med,
+    fold_change = chr_prop_v3 / chr_prop_v2
+  ) %>%
+  dplyr::arrange(Scenario, Setting)
+
+message("\n[v3 DIAG] Effective chr_prop (v2 vs v3) by Setting x AgeCat, ",
+        "and v3/v2 fold change:")
+print(effective_chr_prop, n = Inf)
+
+# ---- Q3: Full age-bin share by Setting (ignores AgeCat grouping).
+#          For each Setting the 20 bin shares sum to 1; the distribution across
+#          bins reveals where infections actually land in that Setting.
+bin_share_by_setting <- diagnostic_averted_bin %>%
+  dplyr::group_by(Setting, bin, age_bin, u40_flag) %>%
+  dplyr::summarise(averted = sum(averted, na.rm = TRUE), .groups = "drop") %>%
+  dplyr::group_by(Setting) %>%                      # <-- normalise ACROSS bins
+  dplyr::mutate(share = averted / sum(averted, na.rm = TRUE)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(Setting = factor(Setting, levels = c("Low","Moderate","High"))) %>%
+  dplyr::arrange(Setting, bin)
+
+message("\n[v3 DIAG] Age-bin share of total averted cases by Setting ",
+        "(all scenarios pooled):")
+print(
+  bin_share_by_setting %>%
+    tidyr::pivot_wider(id_cols = c(bin, age_bin, u40_flag),
+                       names_from = Setting, values_from = share) %>%
+    dplyr::arrange(bin),
+  n = Inf
+)
+
+# Handy objects kept in workspace for follow-up inspection:
+#   - diagnostic_averted_bin     : per Region x VE x Cov x Scen x bin
+#   - share_u40_o40_summary      : compact Setting x AgeCat x (u40/o40) shares
+#   - effective_chr_prop         : implied v3 chr_prop per Setting x AgeCat
+#   - bin_share_by_setting       : overall age-bin share per Setting
 

@@ -30,6 +30,32 @@
 # SECTION 01. Global setup and shared inputs
 # =============================================================================
 
+# =============================================================================
+# current wd:  "C:/Users/user/OneDrive/CHIK_benefit_risk"
+# for the flat immunity assumption 
+# open: 
+# preui_flat_all.RData
+# posterior_flat_all.RData
+# sim results flat
+# postsim flat
+# hosp
+# fatal
+# le by age
+# =============================================================================
+load("01_Data/preui_flat_all.RData")
+load("01_Data/posterior_flat_all.RData")
+load("01_Data/posterior_flat_all.RData")
+load("01_Data/sim_results_vc_ixchiq_model_flat.RData")
+load("01_Data/postsim_vc_ixchiq_model_flat.RData")
+load("01_Data/chikv_fatal_hosp_rate.RData")
+le_sample <- readRDS("01_Data/le_sample.RDS")
+lhs_sample_young <- readRDS("01_Data/lhs_sample_young.RDS")
+lhs_old <- readRDS("01_Data/lhs_old.RDS")
+load("01_Data/lhs_orv.RData")
+load("01_Data/pop_by_state.RData")
+load("01_Data/lhs_sample.RData")
+load("01_Data/combined_nnv_df_region_coverage_model.RData")
+
 age_groups <- c(mean(0:1),
                 mean(1:4),
                 mean(5:9),
@@ -72,6 +98,20 @@ posterior_list <- list(
   go = posterior_go
 )
 
+posterior_list <- list(
+  "Ceará"               = posterior_ce,
+  "Bahia"               = posterior_bh,
+  "Paraíba"             = posterior_pa,
+  "Pernambuco"          = posterior_pn,
+  "Rio Grande do Norte" = posterior_rg,
+  "Piauí"               = posterior_pi,
+  "Alagoas"             = posterior_ag,
+  "Tocantins"           = posterior_tc,
+  "Minas Gerais"        = posterior_mg,
+  "Sergipe"             = posterior_se,
+  "Goiás"               = posterior_go
+)
+
 rho_pool <- purrr::imap_dfr(posterior_list, function(post, region_name){
   tibble(
     Region = region_name,
@@ -96,7 +136,6 @@ preui_all <- list(
   preui_tc
 )
 
-save(preui_all, file = "01_Data/preui_all.RData")
 
 
 names(preui_all) <- c("Ceará","Alagoas", "Bahia", "Goiás",

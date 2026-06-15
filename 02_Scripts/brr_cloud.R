@@ -208,10 +208,10 @@ prep_cloud_pool_setting <- function(draw_level_xy_true,
     dplyr::mutate(
       risk_type = dplyr::recode(
         risk_type,
-        x_10k_base = "Base risk",
-        x_10k_adj  = "Adjusted risk"
+        x_10k_base = "Base",
+        x_10k_adj  = "Serostatus-adjusted"
       ),
-      risk_type = factor(risk_type, levels = c("Base risk", "Adjusted risk"))
+      risk_type = factor(risk_type, levels = c("Base", "Serostatus-adjusted"))
     ) %>%
     filter(is.finite(x), is.finite(y), x >= 0, y >= 0) %>%
     filter(!is.na(setting), !is.na(AgeCat), !is.na(VE_show))
@@ -274,7 +274,7 @@ plot_cloud_pool_auto_scale <- function(df,
     geom_point(alpha = alpha_cloud, size = point_size) +
     ggh4x::facet_nested(risk_type ~ setting + AgeCat, nest_line = element_line(colour = "grey40")) +
     labs(
-      title = paste0("Probabilistic cloud: ", target_outcome),
+      title = paste0("Benefit-risk: ", target_outcome),
       x = x_label,
       y = y_label,
       colour = "Vaccine protection mechanism",
@@ -324,7 +324,11 @@ p_sae <- plot_cloud_pool_auto_scale(cloud_pool, "SAE", eps_log = 1e-2) +
 p_daly <- plot_cloud_pool_auto_scale(cloud_pool, "DALY", eps_log = 1e-2) +
   theme(text = element_text(family = "Calibri"))
 
-p_death <-plot_cloud_pool_auto_scale(cloud_pool, "Death", eps_log = 1e-6) +
+cloud_pool_death_65 <- cloud_pool %>%
+  dplyr::filter(as.character(AgeCat) == "65+") %>%
+  dplyr::mutate(AgeCat = droplevels(factor(AgeCat)))
+
+p_death <- plot_cloud_pool_auto_scale(cloud_pool_death_65, "Death", eps_log = 1e-6) +
   scale_x_log10(
     breaks = scales::log_breaks(n = 5),
     labels = scales::label_number(accuracy = 0.000001, trim = TRUE)
@@ -334,7 +338,7 @@ p_death <-plot_cloud_pool_auto_scale(cloud_pool, "Death", eps_log = 1e-6) +
   )
 
 ggsave("06_Results/brr_ori_daly_cloud.pdf", plot = p_daly, width = 14, height = 6, device = cairo_pdf)
-ggsave("06_Results/brr_ori_death_cloud.pdf", plot = p_death, width = 10, height = 7, device = cairo_pdf)
-ggsave("06_Results/brr_ori_sae_cloud.pdf", plot = p_sae, width = 10, height = 7, device = cairo_pdf)
+ggsave("06_Results/brr_ori_death_cloud.pdf", plot = p_death, width = 9, height = 6, device = cairo_pdf)
+ggsave("06_Results/brr_ori_sae_cloud.pdf", plot = p_sae, width = 14, height = 6, device = cairo_pdf)
 
 

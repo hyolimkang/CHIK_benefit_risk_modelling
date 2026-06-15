@@ -801,6 +801,9 @@ colnames(lhs_sample) <- cols2
 lhs_sample <- as.data.frame(lhs_sample)
 
 
+save(lhs_sample, file = "01_Data/lhs_sample.RData")
+
+
 # tables
 digits_prob_default <- 1
 digits_prob_small   <- 4
